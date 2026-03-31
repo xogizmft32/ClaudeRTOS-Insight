@@ -1,4 +1,4 @@
-# ClaudeRTOS-Insight V3.8 — 빠른 시작 가이드 (한국어)
+# ClaudeRTOS-Insight V3.9.1 — 빠른 시작 가이드 (한국어)
 
 **목표:** 설치 → 빌드 → 플래시 → 호스트 연결 → AI 디버깅  
 **예상 시간:** ~20분 (자동 설치기 사용 시)  
@@ -23,7 +23,7 @@ sudo apt install gcc-arm-none-eabi make python3 python3-pip
 ## Step 1: 자동 설치
 
 ```bash
-tar -xzf ClaudeRTOS-Insight-v3.8.0-FINAL.tar.gz
+tar -xzf ClaudeRTOS-Insight-v3.9.1-FINAL.tar.gz
 cd ClaudeRTOS-Insight-v2.5.0
 
 # 내 프로젝트에 자동 통합 (ITM 모드)
@@ -107,7 +107,7 @@ make flash-stlink   # ST-Link (Nucleo 내장)
 
 SWO Viewer 또는 시리얼(115200 baud)에서 확인:
 ```
-ClaudeRTOS-Insight V3.8.0 Started [ITM]
+ClaudeRTOS-Insight V3.9.1.0 Started [ITM]
 ```
 
 ---
@@ -170,6 +170,21 @@ python3 examples/integrated_demo.py --port jlink --ai-mode realtime    # 즉시 
 ```
 
 ---
+
+---
+
+## AI Provider 선택
+
+환경 변수 하나로 AI 백엔드를 교체합니다:
+
+```bash
+export CLAUDERTOS_AI_PROVIDER=anthropic   # 기본 (Claude)
+export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
+export CLAUDERTOS_AI_PROVIDER=google      # Gemini
+export CLAUDERTOS_AI_PROVIDER=ollama      # 로컬, $0 비용
+```
+
+자세한 내용: `docs/AI_USAGE_GUIDE_ko.md`
 
 ## 자주 묻는 질문
 

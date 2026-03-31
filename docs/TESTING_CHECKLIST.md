@@ -92,11 +92,11 @@ JLinkSWOViewerCL -device STM32F446RE -swofreq 2250000 -itmport 0
 ```
 Connected to STM32F446RE
 SWO enabled
-Startup message: "ClaudeRTOS-Insight V3.5 Started"
+Startup message: "ClaudeRTOS-Insight V3.9.1 Started"
 ```
 
 **체크:**
-- [ ] "ClaudeRTOS-Insight V3.5 Started" 메시지 보임
+- [ ] "ClaudeRTOS-Insight V3.9.1 Started" 메시지 보임
 - [ ] 주기적으로 데이터 수신됨
 - [ ] 데이터가 바이너리 형태 (사람이 못 읽음 = 정상)
 

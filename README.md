@@ -1,364 +1,198 @@
-# ClaudeRTOS-Insight
+# ClaudeRTOS-Insight v3.9.1
 
-**Production-Safe FreeRTOS Monitoring System with Guaranteed Critical Event Protection**
+**AI-assisted FreeRTOS/STM32 Real-Time Debugging System**
 
-[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/your-repo/ClaudeRTOS-Insight)
-[![Safety](https://img.shields.io/badge/safety-production--ready-green.svg)](docs/SAFETY_AUDIT_SUMMARY.md)
+[![Version](https://img.shields.io/badge/version-3.9.1-blue.svg)](https://github.com/xogizmft32/ClaudeRTOS-Insight)
+[![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
 
-## ⚠️ **IMPORTANT: Production-Safe V4**
+## Overview
 
-**This is V4 - Production-Safe Implementation**
+ClaudeRTOS-Insight는 FreeRTOS/STM32 임베디드 시스템을 위한 AI 기반 실시간 디버깅 시스템입니다.
 
-Previous versions (V1-V3) had critical safety issues and should **NOT** be used in production:
-- ❌ V1: Ring buffer drop algorithm flaw
-- ❌ V2: No concurrency protection
-- ❌ V3: Missing safety checks
-
-✅ **V4 is production-ready** with complete safety validation.
+- **펌웨어**: STM32 Nucleo-F446RE (Cortex-M4, 180MHz)에서 OS 상태·이벤트 수집
+- **호스트**: N100 PC에서 로컬 분석 + Claude/GPT/Gemini/Ollama AI 심층 분석
+- **비용**: postmortem 모드 기준 ~$0.015/이슈, Ollama 사용 시 $0
 
 ---
 
-## 🎯 **Overview**
+## Key Features
 
-ClaudeRTOS-Insight provides real-time monitoring of FreeRTOS systems with **GUARANTEED** protection of critical events through reserved buffer architecture and comprehensive safety checks.
-
-### **Key Features**
-
-✅ **Critical Event Protection (100%)**
-- Reserved buffer space (20%) exclusively for critical events
-- Physical separation prevents interference
-- Mathematically guaranteed protection
-
-✅ **Production-Safe Design**
-- Buffer overflow protection
-- Array bounds checking
-- Assert macros throughout
-- Input validation
-- Structure integrity verification
-- Watchdog integration
-- Error logging
-- Double init protection
-
-✅ **Thread & ISR Safe**
-- FreeRTOS critical sections
-- Separate FromISR functions
-- Memory barriers (DMB)
-- Atomic operations
-
-✅ **Efficient Binary Protocol**
-- CRC32 validation
-- Timestamp synchronization
-- Adaptive sampling (differential + burst)
-- Bandwidth optimization
+| 기능 | 내용 |
+|------|------|
+| **Trace V2** | Lock-free ring buffer (LDREX/STREX), DWT CYCCNT/EXCCNT, 0.028% CPU |
+| **AI Provider 추상화** | Anthropic/OpenAI/Google/Ollama 1줄 교체 |
+| **Correlation Engine** | CORR-001~006, causal chain (max 10 steps) |
+| **Pattern DB** | KP-001~005 JSON 선언적 패턴, 사용자 확장 가능 |
+| **Binary Protocol V4** | WIRE_PUT 매크로, endian 명시, V3 하위 호환 |
+| **Port Layer** | Cortex-M4 + ESP32, 신규 MCU 이식 1파일 |
+| **구조화 JSON 출력** | root_cause_candidates, confidence, causal_chain |
 
 ---
 
-## 📊 **Safety Score: 95/100** ✅
-
-```
-메모리 안전성:        █████████░  95/100  ✅ PASS
-동시성 안전성:        ██████████ 100/100  ✅ PASS
-에러 처리:           █████████░  95/100  ✅ PASS
-타이밍 안전성:        ████████░░  85/100  ✅ PASS
-리소스 관리:         ████████░░  85/100  ✅ PASS
-데이터 무결성:        █████████░  95/100  ✅ PASS
-초기화/종료:         ██████████ 100/100  ✅ PASS
-
-Overall:            █████████░  95/100  ✅ PRODUCTION READY
-```
-
----
-
-## 🚀 **Quick Start**
-
-### **1. Include in your project**
-
-```c
-#include "priority_buffer_v4.h"
-
-/* Buffer storage (static allocation) */
-static uint8_t buffer_storage[8192];  /* 8KB */
-static PriorityBufferV4_t priority_buffer;
-
-/* Initialize */
-void system_init(void) {
-    BufferError_t err = PriorityBufferV4_Init(&priority_buffer, 
-                                              buffer_storage, 
-                                              sizeof(buffer_storage));
-    configASSERT(err == BUFFER_OK);
-}
-```
-
-### **2. Write critical events**
-
-```c
-/* From Task */
-void task_monitor(void *param) {
-    uint8_t snapshot[512];
-    collect_system_snapshot(snapshot);
-    
-    /* Auto-classify priority */
-    EventPriority_t priority = classify_event(snapshot);
-    
-    /* Write with guaranteed protection */
-    BufferError_t err = PriorityBufferV4_Write(&priority_buffer,
-                                                snapshot,
-                                                sizeof(snapshot),
-                                                priority);
-    
-    if (err != BUFFER_OK) {
-        handle_error(err);
-    }
-}
-
-/* From ISR */
-void HardFault_Handler(void) {
-    BaseType_t xHigher = pdFALSE;
-    uint8_t fault_data[100];
-    capture_fault_info(fault_data);
-    
-    /* CRITICAL events ALWAYS succeed (reserved buffer) */
-    PriorityBufferV4_WriteFromISR(&priority_buffer,
-                                  fault_data,
-                                  sizeof(fault_data),
-                                  PRIORITY_CRITICAL,
-                                  &xHigher);
-    
-    portYIELD_FROM_ISR(xHigher);
-}
-```
-
-### **3. Read events**
-
-```c
-void uart_tx_task(void *param) {
-    uint8_t read_buffer[512];
-    EventPriority_t priority;
-    
-    while (1) {
-        size_t len = PriorityBufferV4_Read(&priority_buffer,
-                                           read_buffer,
-                                           sizeof(read_buffer),
-                                           &priority);
-        
-        if (len > 0) {
-            uart_transmit(read_buffer, len);  /* Send to host */
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-```
-
----
-
-## 🏗️ **Architecture**
-
-### **Reserved Space Design**
-
-```
-┌─────────────────────────────────────────┐
-│  Total Buffer (8 KB)                    │
-├───────────────────────┬─────────────────┤
-│  Normal (80%)         │ Reserved (20%)  │
-│  6.5 KB               │ 1.6 KB          │
-├───────────────────────┴─────────────────┤
-│  LOW/NORMAL/HIGH      │  CRITICAL ONLY  │
-└───────────────────────┴─────────────────┘
-
-Normal buffer full? → CRITICAL still succeeds ✅
-```
-
-### **Priority Levels**
-
-| Priority | Usage | Buffer | Drop Policy |
-|----------|-------|--------|-------------|
-| CRITICAL (0) | Faults, overflows | Reserved | Never dropped* |
-| HIGH (1) | Warnings | Normal | Drop LOW/NORMAL |
-| NORMAL (2) | Regular monitoring | Normal | Drop LOW |
-| LOW (3) | Statistics | Normal | Dropped first |
-
-*Until reserved buffer full (indicates misconfiguration)
-
----
-
-## 📈 **Performance**
-
-| Metric | Value | Target | Status |
-|--------|-------|--------|--------|
-| **WCET** | 35 µs | < 50 µs | ✅ Pass |
-| **Memory** | 8.3 KB | < 10 KB | ✅ Pass |
-| **Throughput** | 20 KB/s | > 10 KB/s | ✅ Pass |
-| **Critical Drops** | 0 | 0 | ✅ Pass |
-
----
-
-## 🔒 **Safety Features**
-
-### **Memory Safety**
-- ✅ Buffer overflow checks (`len <= capacity`)
-- ✅ Array bounds validation
-- ✅ Null pointer checks
-- ✅ Integer overflow protection
-- ✅ Magic number verification
-
-### **Concurrency Safety**
-- ✅ FreeRTOS critical sections
-- ✅ ISR-safe variants (FromISR)
-- ✅ Memory barriers (DMB)
-- ✅ Volatile on shared variables
-
-### **Error Handling**
-- ✅ Assert macros (configASSERT)
-- ✅ Error logging callback
-- ✅ Return code validation
-- ✅ Graceful degradation
-
-### **Data Integrity**
-- ✅ Structure integrity checks
-- ✅ Input validation
-- ✅ CRC32 on packets
-- ✅ State machine validation
-
----
-
-## 📚 **Documentation**
-
-- [Safety Audit Summary](docs/SAFETY_AUDIT_SUMMARY.md) - Complete safety review
-- [Concurrency Verification](docs/CONCURRENCY_VERIFICATION.md) - Thread safety proof
-- [Priority Buffer Analysis](docs/PRIORITY_BUFFER_ANALYSIS.md) - V1 vs V4 comparison
-- [API Reference](docs/API_REFERENCE.md) - Complete API documentation
-- [Integration Guide](docs/INTEGRATION_GUIDE.md) - Step-by-step integration
-
----
-
-## 🧪 **Testing**
-
-### **Automated Tests**
+## Quick Start
 
 ```bash
-# Build and run tests
-cd tests
-make clean && make
-./test_priority_buffer_v4
+# 설치
+python3 install.py --project /path/to/my_stm32_project
 
-# Expected output:
-✅ Test 1: Initialization - PASS
-✅ Test 2: Buffer overflow protection - PASS
-✅ Test 3: Array bounds checking - PASS
-✅ Test 4: Critical event guarantee - PASS
-✅ Test 5: Thread safety - PASS
-✅ Test 6: ISR safety - PASS
+# 검증 (하드웨어 불필요)
+python3 examples/integrated_demo.py --validate
 
-All tests PASSED (6/6)
-```
+# 호스트 연결 (기본: Anthropic Claude)
+export ANTHROPIC_API_KEY=sk-ant-...
+python3 examples/integrated_demo.py --port jlink
 
-### **Fault Injection**
+# 다른 AI 사용 (코드 변경 없이)
+export CLAUDERTOS_AI_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+python3 examples/integrated_demo.py --port jlink
 
-```bash
-# Run fault injection tests
-python3 tests/fault_injection_tester.py /dev/ttyUSB0
-
-# Verifies:
-- Heap exhaustion handling
-- Stack overflow detection
-- Deadlock recovery
-- Buffer overflow protection
+# 로컬 AI (비용 0)
+export CLAUDERTOS_AI_PROVIDER=ollama
+python3 examples/integrated_demo.py --port jlink
 ```
 
 ---
 
-## 📋 **Requirements**
+## Architecture
 
-- **MCU:** ARM Cortex-M3/M4/M7
-- **RTOS:** FreeRTOS 10.0+
-- **RAM:** 8+ KB
-- **Flash:** 10+ KB
-- **Tools:** GCC ARM, Make
-
----
-
-## 🔄 **Version History**
-
-### **v2.4.0-FINAL (2026-03-19)** ✅ Current
-- ✅ Production-safe V4 implementation
-- ✅ Complete safety checks
-- ✅ Error handling
-- ✅ Watchdog integration
-- ✅ Safety audit: 95/100
-
-### v2.3.0 (2026-03-19) ⚠️ Deprecated
-- Fault injection testing
-- MISRA C guidelines
-- Missing safety checks
-
-### v2.2.0 (2026-03-19) ⚠️ Deprecated
-- Priority buffer V2 (flawed)
-- Adaptive sampling
-- Time synchronization
-
-### v2.1.1 (2026-03-19) ⚠️ Deprecated
-- SIL4 corrections
-- Documentation fixes
-
----
-
-## ⚠️ **Migration from V1-V3**
-
-**CRITICAL:** V1-V3 should NOT be used. Migrate to V4 immediately.
-
-```c
-// Old (V1-V3) - DEPRECATED
-#include "priority_buffer.h"  // or v2.h, v3.h
-PriorityBuffer_Init(&buf, storage, size);
-PriorityBuffer_Write(&buf, data, len, priority);
-
-// New (V4) - PRODUCTION SAFE
-#include "priority_buffer_v4.h"
-BufferError_t err = PriorityBufferV4_Init(&buf, storage, size);
-if (err != BUFFER_OK) handle_error(err);
-err = PriorityBufferV4_Write(&buf, data, len, priority);
-if (err != BUFFER_OK) handle_error(err);
+```
+┌──────────────────────────────────────────────────────┐
+│  STM32 Nucleo-F446RE (Firmware)                      │
+│                                                      │
+│  MonitorTask (1Hz)                                   │
+│    ├── OSMonitorV3_Collect()   ← CPU%, heap, tasks   │
+│    ├── TraceEvents_SampleISRCount()  ← DWT EXCCNT    │
+│    └── TraceEvents_Read()      ← ctx_switch, mutex   │
+│                                                      │
+│  Trace Hooks (FreeRTOS):                             │
+│    traceTASK_SWITCHED_IN/OUT   ← ~25 cycles          │
+│    traceTAKE/GIVE_MUTEX        ← ~25 cycles          │
+│    DWT EXCCNT (ISR frequency)  ← 0 cycles            │
+│                                                      │
+│  Binary Protocol V4 (ITM/UART)                       │
+└──────────────────┬───────────────────────────────────┘
+                   │ SWO / UART
+┌──────────────────▼───────────────────────────────────┐
+│  Host (N100 PC)                                      │
+│                                                      │
+│  binary_parser.py    ← V3/V4 패킷 파싱               │
+│  analyzer.py         ← Rule-based 이슈 감지 (<1ms)   │
+│  correlation_engine  ← multi-event causal chain      │
+│  prefilter.py        ← PatternDB KP 매칭 (비용 $0)   │
+│  token_optimizer.py  ← 컨텍스트 압축                  │
+│                                                      │
+│  AI Provider (교체 가능):                             │
+│    AnthropicProvider  → Claude Sonnet/Haiku           │
+│    OpenAIProvider     → GPT-4o / GPT-4o-mini          │
+│    GoogleProvider     → Gemini 1.5 Pro/Flash           │
+│    OllamaProvider     → Llama3/Qwen2.5 (로컬, $0)    │
+│                                                      │
+│  response_parser.py  ← 구조화 JSON → ParsedResponse  │
+└──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🤝 **Contributing**
+## AI Provider 교체
 
-Contributions welcome! Please:
-1. Follow MISRA C:2012 guidelines
-2. Add tests for new features
-3. Update documentation
-4. Run safety checks
+```python
+from ai.rtos_debugger import RTOSDebuggerV3
+
+# Anthropic Claude (기본)
+debugger = RTOSDebuggerV3()
+
+# OpenAI GPT-4o
+debugger = RTOSDebuggerV3(provider='openai')
+
+# Google Gemini
+debugger = RTOSDebuggerV3(provider='google')
+
+# 로컬 Ollama (비용 0)
+debugger = RTOSDebuggerV3(provider='ollama')
+
+# 모델 직접 지정
+debugger = RTOSDebuggerV3(
+    provider='openai',
+    tier1_model='gpt-4o',
+    tier2_model='gpt-4o-mini',
+)
+
+# Together.ai (OpenAI 호환)
+debugger = RTOSDebuggerV3(
+    provider='openai_compat',
+    base_url='https://api.together.xyz/v1',
+    tier1_model='meta-llama/Llama-3.1-70B-Instruct',
+    tier2_model='meta-llama/Llama-3.1-8B-Instruct',
+)
+```
 
 ---
 
-## 📄 **License**
+## Trace Overhead
 
-MIT License - See [LICENSE](LICENSE)
-
----
-
-## 🙏 **Acknowledgments**
-
-- FreeRTOS community
-- ARM CMSIS
-- Safety-critical embedded community
+| 방법 | 오버헤드 | 정보 |
+|------|---------|------|
+| DWT EXCCNT (HW) | **0 cycles** | ISR 진입 횟수 |
+| Context switch hook | **~25 cycles** | 전환 순서·타이밍 |
+| Mutex hook | **~25 cycles** | lock/unlock 타이밍 |
+| **합계 @ 1kHz** | **0.028% CPU** | |
 
 ---
 
-## 📞 **Support**
+## File Structure
 
-- **Issues:** [GitHub Issues](https://github.com/your-repo/ClaudeRTOS-Insight/issues)
-- **Docs:** [Documentation](docs/)
-- **Safety:** [Safety Audit](docs/SAFETY_AUDIT_SUMMARY.md)
+```
+firmware/
+  core/           binary_protocol V4, trace_events V2, transport
+  modules/        os_monitor V3 (port-based), event_classifier
+  port/           port.h interface, cortex_m4/, esp32/
+  examples/demo/  main.c, FreeRTOSConfig.h, Makefile
+
+host/
+  ai/
+    providers/    base.py, anthropic.py, openai.py, google.py, ollama.py, factory.py
+    rtos_debugger.py  (provider-agnostic)
+    response_parser.py
+  analysis/       analyzer.py, correlation_engine.py, debugger_context.py
+  local_analyzer/ prefilter.py, token_optimizer.py, local_llm.py
+  parsers/        binary_parser.py (V3/V4)
+  patterns/       known_patterns.json, pattern_db.py
+
+docs/             EN + KO (_ko suffix) documentation
+install.py        Auto-integration installer
+```
 
 ---
 
-**Status:** ✅ **PRODUCTION READY**  
-**Safety Score:** 95/100  
-**Version:** 2.4.0-FINAL  
-**Last Updated:** 2026-03-19
+## Documentation
+
+| 문서 | 내용 |
+|------|------|
+| [QUICKSTART_COMPLETE.md](docs/QUICKSTART_COMPLETE.md) / [_ko](docs/QUICKSTART_COMPLETE_ko.md) | 설치~AI 디버깅 전 과정 |
+| [AI_USAGE_GUIDE.md](docs/AI_USAGE_GUIDE.md) / [_ko](docs/AI_USAGE_GUIDE_ko.md) | AI 모드·비용·Provider 가이드 |
+| [TRACE_GUIDE.md](docs/TRACE_GUIDE.md) / [_ko](docs/TRACE_GUIDE_ko.md) | Trace V2 상세 |
+| [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | 테스트 방법 |
+| [WCET_ANALYSIS.md](docs/WCET_ANALYSIS.md) | 최악 실행 시간 분석 |
+
+---
+
+## Version History
+
+| 버전 | 날짜 | 주요 변경 |
+|------|------|---------|
+| **3.9.1** | 2026-03-31 | Trace V2 (lock-free, DWT CYCCNT/EXCCNT), AI Provider 추상화 |
+| 3.9.0 | 2026-03-29 | Pattern DB JSON, Binary Protocol V4, Causal Chain 설정 가능 |
+| 3.8.0 | 2026-03-28 | AI 구조화 JSON, Correlation Engine, 시나리오 분기 |
+| 3.7.0 | 2026-03-28 | Port Layer, 로컬 분석기 (PreFilter/LocalLLM/TokenOptimizer) |
+| 3.6.0 | 2026-03-27 | 비용 최적화 (심각도별 모델 분기, 79% 절감) |
+| 3.5.0 | 2026-03-26 | install.py, AI 모드 (offline/postmortem/realtime) |
+
+전체 이력: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
+**Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+ | **Validation:** 20/20 PASS

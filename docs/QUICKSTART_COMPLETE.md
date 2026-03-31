@@ -1,4 +1,4 @@
-# ClaudeRTOS-Insight V3.8 — Quick Start Guide
+# ClaudeRTOS-Insight V3.9.1 — Quick Start Guide
 
 **Goal:** Install → Build → Flash → Connect Host → AI Debug  
 **Time:** ~20 minutes (with auto-installer)  
@@ -23,7 +23,7 @@ sudo apt install gcc-arm-none-eabi make python3 python3-pip
 ## Step 1: Auto-Install
 
 ```bash
-tar -xzf ClaudeRTOS-Insight-v3.8.0-FINAL.tar.gz
+tar -xzf ClaudeRTOS-Insight-v3.9.1-FINAL.tar.gz
 cd ClaudeRTOS-Insight-v2.5.0
 
 # Auto-integrate into your project (ITM mode)
@@ -107,7 +107,7 @@ make flash-stlink   # ST-Link (Nucleo built-in)
 
 Expected output (SWO or serial at 115200):
 ```
-ClaudeRTOS-Insight V3.8.0 Started [ITM]
+ClaudeRTOS-Insight V3.9.1.0 Started [ITM]
 ```
 
 ---
@@ -170,6 +170,21 @@ Add custom patterns: `host/patterns/custom_patterns.json`
 ```
 
 ---
+
+---
+
+## AI Provider Selection
+
+Switch AI backend with one environment variable:
+
+```bash
+export CLAUDERTOS_AI_PROVIDER=anthropic   # default (Claude)
+export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
+export CLAUDERTOS_AI_PROVIDER=google      # Gemini
+export CLAUDERTOS_AI_PROVIDER=ollama      # local, $0 cost
+```
+
+See `docs/AI_USAGE_GUIDE.md` for details.
 
 ## FAQ
 

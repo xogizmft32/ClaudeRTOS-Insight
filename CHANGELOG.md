@@ -511,3 +511,57 @@ N100 CPU (무GPU)에서 Claude API 호출 전 사전 처리:
 - `docs/TRACE_GUIDE_ko.md` (한국어)
 
 **Validation:** 20/20 + 7 step pipeline 모두 통과
+
+## [4.0.0] — 2026-03-31 ✅ PRODUCTION READY
+
+### AI Provider 추상화 계층 (host/ai/providers/)
+
+**설계 목표:** 분석 로직(라우팅·프롬프트·파싱) 변경 없이 AI 백엔드 교체
+
+**신규 파일:**
+- `host/ai/providers/base.py` — `AIProvider` 추상 인터페이스, `AIResponse`, `AITier`
+- `host/ai/providers/anthropic.py` — Claude Sonnet(TIER1)/Haiku(TIER2)
+- `host/ai/providers/openai.py` — GPT-4o(TIER1)/GPT-4o-mini(TIER2), OpenAI 호환 API
+- `host/ai/providers/google.py` — Gemini 1.5 Pro(TIER1)/Flash(TIER2)
+- `host/ai/providers/ollama.py` — 로컬 LLM, 비용 $0, 네트워크 불필요
+- `host/ai/providers/factory.py` — `create_provider()`, Provider 레지스트리
+
+**`host/ai/rtos_debugger.py` 전면 재작성 (V4.0):**
+- Anthropic SDK 직접 의존 완전 제거
+- `AIProvider.generate()` 단일 인터페이스만 사용
+- Provider 교체: `RTOSDebuggerV3(provider='openai')` 1줄
+
+**사용법:**
+```python
+# 환경 변수 (코드 변경 없음)
+export CLAUDERTOS_AI_PROVIDER=openai
+
+# 코드에서
+debugger = RTOSDebuggerV3(provider='ollama')  # 비용 $0
+
+# 커스텀 모델
+debugger = RTOSDebuggerV3(
+    provider='openai_compat',
+    base_url='https://api.together.xyz/v1',
+    tier1_model='meta-llama/Llama-3.1-70B-Instruct',
+)
+```
+
+**Provider별 이슈당 예상 비용:**
+| Provider | Critical | High |
+|----------|---------|------|
+| anthropic | $0.00375 | $0.00027 |
+| openai    | $0.00263 | $0.00022 |
+| google    | $0.00298 | $0.00025 |
+| ollama    | $0.00000 | $0.00000 |
+
+### 문서 전면 업데이트
+
+모든 문서 v3.9.1로 버전 통일:
+- `README.md` — 전체 재작성 (v2.4 → v3.9.1)
+- `docs/AI_USAGE_GUIDE.md` / `_ko.md` — Provider 선택 가이드 추가
+- `docs/QUICKSTART_COMPLETE.md` / `_ko.md` — Provider 섹션 추가
+- `docs/QUICK_TROUBLESHOOTING.md` — Provider·Trace 트러블슈팅 추가
+- 기타 8개 문서 버전 표기 v3.9.1로 통일
+
+### Validation: 14/14 AI Provider + 20/20 Protocol PASS

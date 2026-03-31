@@ -1,7 +1,7 @@
 # MISRA C:2012 Compliance Guidelines
 ## Memory Safety and Coding Standards
 
-**Version:** 2.3.0  
+**Version:** 3.9.1  
 **Standard:** MISRA C:2012  
 **Status:** Guidelines (NOT fully verified)
 
@@ -549,6 +549,6 @@ Expand to all modules:
 
 ---
 
-**Version:** 2.3.0  
+**Version:** 3.9.1  
 **Last Updated:** 2026-03-19  
 **Status:** Guidelines (verification pending)

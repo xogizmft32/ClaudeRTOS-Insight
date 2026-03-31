@@ -1,5 +1,5 @@
 # WCET Analysis Report
-## ClaudeRTOS-Insight V3.5
+## ClaudeRTOS-Insight V3.9.1
 
 **Target:** STM32F446RE @ 180 MHz  
 **Analysis Method:** Static analysis + Empirical measurement  
@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-All functions in ClaudeRTOS-Insight V3.5 have **estimated Worst-Case Execution Times (WCET)** derived through:
+All functions in ClaudeRTOS-Insight V3.9.1 have **estimated Worst-Case Execution Times (WCET)** derived through:
 1. Static code analysis
 2. Empirical measurement (10,000+ iterations)
 3. Safety margin (1.5×)
@@ -295,7 +295,7 @@ void measure_wcet_CRC32(void) {
 
 ## Conclusion
 
-ClaudeRTOS-Insight V3.5 provides **estimated WCET** for all functions:
+ClaudeRTOS-Insight V3.9.1 provides **estimated WCET** for all functions:
 
 - ✅ Static analysis complete
 - ✅ Empirical verification complete
