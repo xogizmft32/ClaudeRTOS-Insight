@@ -1,0 +1,1 @@
+"""ClaudeRTOS pattern database package."""

@@ -1,0 +1,25 @@
+# ClaudeRTOS-Insight V3.1 Host Requirements
+
+# Anthropic Claude API (use latest)
+anthropic>=0.40.0
+
+# Serial communication (UART fallback)
+pyserial>=3.5
+
+# J-Link SWO interface (optional – required for --source jlink)
+pylink-square>=1.2.0
+
+# Numerical analysis (trend detection)
+numpy>=1.24.0
+
+# Testing
+pytest>=7.4.0
+
+# Install:
+#   pip install -r requirements.txt
+#
+# J-Link only:
+#   pip install pylink-square
+#
+# Minimum (UART mode only):
+#   pip install anthropic pyserial numpy

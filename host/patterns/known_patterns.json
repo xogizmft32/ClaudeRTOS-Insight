@@ -1,0 +1,142 @@
+{
+  "_meta": {
+    "version":     "1.0.0",
+    "description": "ClaudeRTOS Known Issue Pattern Database",
+    "updated":     "2026-03-28",
+    "schema":      "https://claudertos.example.com/schema/patterns/v1"
+  },
+
+  "patterns": [
+    {
+      "id":          "KP-001",
+      "name":        "Mutex Timeout → Priority Inversion",
+      "category":    "deadlock",
+      "severity":    "High",
+      "enabled":     true,
+      "description": "mutex_timeout 이벤트 + priority_inversion 이슈 동시 발생",
+      "match": {
+        "require_issues":  ["priority_inversion"],
+        "require_events":  ["mutex_timeout"],
+        "exclude_issues":  [],
+        "min_confidence":  0.70
+      },
+      "causal_chain_template": [
+        "mutex_take('{mutex_name}')",
+        "priority inversion: {high_task} blocked by {low_task}",
+        "mutex_timeout after {wait_ticks} ticks",
+        "task scheduling disrupted"
+      ],
+      "diagnosis": {
+        "root_cause": "높은 우선순위 태스크가 낮은 우선순위 태스크가 보유한 Mutex를 대기 중입니다.",
+        "fix":        "configUSE_MUTEXES=1로 Priority Inheritance 활성화. xSemaphoreCreateMutex() 사용.",
+        "prevention": "Mutex 보유 시간 최소화, configUSE_MUTEXES로 우선순위 상속 활성화."
+      },
+      "references": ["FreeRTOS Priority Inheritance", "MISRA C:2012 R.22.2"]
+    },
+    {
+      "id":          "KP-002",
+      "name":        "Repeated Malloc → Heap Fragmentation",
+      "category":    "memory",
+      "severity":    "High",
+      "enabled":     true,
+      "description": "malloc 이벤트 5회 이상 + heap 관련 이슈 발생",
+      "match": {
+        "require_issues":  ["low_heap", "heap_exhaustion"],
+        "require_events":  ["malloc"],
+        "event_count_min": {"malloc": 5},
+        "exclude_issues":  [],
+        "min_confidence":  0.65
+      },
+      "causal_chain_template": [
+        "pvPortMalloc × {malloc_count} calls",
+        "heap fragmentation accumulates",
+        "free heap < {heap_free_pct}% of total",
+        "allocation failure risk"
+      ],
+      "diagnosis": {
+        "root_cause": "소형 동적 할당의 반복으로 heap 단편화가 발생합니다.",
+        "fix":        "정적 할당(static 배열) 또는 메모리 풀(Memory Pool) 패턴으로 교체. configUSE_HEAP_5로 여러 메모리 영역 활용.",
+        "prevention": "임베디드 시스템에서 동적 할당 최소화. heap_4.c → heap_5.c 전환 검토."
+      },
+      "references": ["FreeRTOS Memory Management", "MISRA C:2012 R.21.3"]
+    },
+    {
+      "id":          "KP-003",
+      "name":        "Stack HWM Critical — Imminent Overflow",
+      "category":    "memory",
+      "severity":    "Critical",
+      "enabled":     true,
+      "description": "stack_hwm < 20 words로 오버플로우 임박",
+      "match": {
+        "require_issues":  ["stack_overflow_imminent"],
+        "require_events":  [],
+        "issue_detail":    {"stack_hwm_words": {"lt": 20}},
+        "min_confidence":  0.90
+      },
+      "causal_chain_template": [
+        "task '{task_name}' stack allocated: {stack_size} words",
+        "stack HWM dropped to {hwm} words remaining",
+        "overflow imminent: {hwm} words < 20W threshold",
+        "configCHECK_FOR_STACK_OVERFLOW=2 would catch this"
+      ],
+      "diagnosis": {
+        "root_cause": "태스크 스택 크기가 부족합니다. xTaskCreate의 usStackDepth 파라미터를 확인하세요.",
+        "fix":        "xTaskCreate() 스택 크기를 현재의 2배 또는 uxTaskGetStackHighWaterMark() + 64 words로 설정.",
+        "prevention": "configCHECK_FOR_STACK_OVERFLOW=2 설정 + 주기적 HWM 모니터링."
+      },
+      "references": ["FreeRTOS Stack Overflow Detection", "configCHECK_FOR_STACK_OVERFLOW"]
+    },
+    {
+      "id":          "KP-004",
+      "name":        "ISR malloc — Forbidden Pattern",
+      "category":    "timing",
+      "severity":    "Critical",
+      "enabled":     true,
+      "description": "ISR 컨텍스트에서 pvPortMalloc 호출 (heap_4.c ISR-unsafe)",
+      "match": {
+        "require_issues":  [],
+        "require_events":  ["isr_enter", "malloc"],
+        "event_sequence":  ["isr_enter", "malloc"],
+        "exclude_issues":  [],
+        "min_confidence":  0.95
+      },
+      "causal_chain_template": [
+        "isr_enter(IRQ={irq_num})",
+        "pvPortMalloc({size}B) called from ISR context",
+        "heap_4.c: taskENTER_CRITICAL() called from ISR — ILLEGAL",
+        "potential heap corruption or hard fault"
+      ],
+      "diagnosis": {
+        "root_cause": "heap_4.c의 pvPortMalloc은 ISR에서 호출 시 taskENTER_CRITICAL을 호출해 2차 fault를 유발합니다.",
+        "fix":        "ISR에서 동적 할당 제거. 정적 버퍼 또는 ISR-safe 큐(xQueueSendFromISR) 사용.",
+        "prevention": "ISR에서는 *FromISR() 함수군만 사용. 코드 리뷰에 ISR malloc 금지 체크 추가."
+      },
+      "references": ["FreeRTOS ISR API", "heap_4.c source", "MISRA C:2012 R.21.3"]
+    },
+    {
+      "id":          "KP-005",
+      "name":        "CPU Creep + Heap Shrink → System Saturation",
+      "category":    "memory",
+      "severity":    "High",
+      "enabled":     true,
+      "description": "CPU 증가 추세 + Heap 감소 추세 동시 발생 → 시스템 포화 위험",
+      "match": {
+        "require_issues":  ["cpu_creep", "heap_shrink"],
+        "require_events":  [],
+        "min_confidence":  0.72
+      },
+      "causal_chain_template": [
+        "cpu_pct increasing: +{cpu_trend}%/sample",
+        "heap_free decreasing: {heap_trend}B/sample",
+        "system saturation trajectory detected",
+        "expected time to critical: ~{eta_min} minutes"
+      ],
+      "diagnosis": {
+        "root_cause": "처리량이 증가하면서 동시에 메모리를 소비하는 워크로드가 시스템 한계에 근접 중입니다.",
+        "fix":        "태스크별 CPU 사용률 프로파일링. 메모리 해제 경로 추적. 샘플링 레이트 조정.",
+        "prevention": "워크로드 증가 시나리오에서 사전 리소스 계획 수립."
+      },
+      "references": []
+    }
+  ]
+}

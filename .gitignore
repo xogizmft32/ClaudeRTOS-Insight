@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+build/
+.venv/
+*.egg-info/
+.DS_Store
+github-update.sh
