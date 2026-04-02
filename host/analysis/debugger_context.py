@@ -51,6 +51,8 @@ def build_context(
     max_timeline:   int                     = 50,
     isr_stats:      Optional[Dict]          = None,
     cpu_hz:         int                     = 180_000_000,
+    resource_state: Optional[Dict]          = None,
+    analysis_candidates: Optional[List[Dict]] = None,
 ) -> str:
     """
     AI에 전달할 compact JSON 문자열을 생성한다.
@@ -128,16 +130,40 @@ def build_context(
             _task_entry(t) for t in snap['tasks']
         ]
 
-    # ── timeline ─────────────────────────────────────────────
+    # ── events (renamed from timeline) ───────────────────────
     if timeline_events:
         recent = (timeline_events[-max_timeline:]
                   if len(timeline_events) > max_timeline
                   else timeline_events)
-        ctx['timeline'] = [_timeline_entry(e) for e in recent]
+        ctx['events'] = [_timeline_entry(e) for e in recent]
 
-    # ── anomalies ────────────────────────────────────────────
+    # ── resources (Mutex hold/wait 상태, ResourceGraph) ───────
+    if resource_state:
+        ctx['resources'] = {
+            'mutex_holds': resource_state.get('holds', {}),
+            'mutex_waits': resource_state.get('waits', {}),
+            'mutex_holders': resource_state.get('holder', {}),
+        }
+
+    # ── anomalies ─────────────────────────────────────────────
     if issues:
         ctx['anomalies'] = [_anomaly_entry(iss) for iss in issues]
+
+    # ── analysis_candidates (Rule+AI Hybrid ④) ───────────────
+    # Orchestrator가 선별한 상위 후보를 AI에게 명시적으로 전달
+    if analysis_candidates:
+        ctx['candidates'] = [
+            {
+                'id':          c.get('pattern_id', '?'),
+                'source':      c.get('source', 'rule'),
+                'severity':    c.get('severity', 'Medium'),
+                'description': c.get('description', '')[:100],
+                'confidence':  round(c.get('confidence', 0.5), 2),
+                'cross_validated': c.get('cross_validated', False),
+                'causal_chain': c.get('causal_chain', [])[:5],
+            }
+            for c in analysis_candidates[:8]
+        ]
 
     # ── crash ────────────────────────────────────────────────
     if fault:
@@ -278,7 +304,7 @@ def _crash_entry(fault: Dict) -> Dict:
 SYSTEM_PROMPT_JSON = """
 FreeRTOS/ARM Cortex-M expert debugger.
 
-Input: compact JSON with session, system, tasks[], timeline[], anomalies[], crash?.
+Input: compact JSON with session, system, tasks[], events[], resources?, anomalies[], candidates?, crash?.
 
 Respond with ONLY valid JSON (no markdown, no explanation):
 {

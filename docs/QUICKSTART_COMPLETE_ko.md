@@ -1,4 +1,4 @@
-# ClaudeRTOS-Insight V3.9.1 — 빠른 시작 가이드 (한국어)
+# ClaudeRTOS-Insight V4.2.0 — 빠른 시작 가이드 (한국어)
 
 **목표:** 설치 → 빌드 → 플래시 → 호스트 연결 → AI 디버깅  
 **예상 시간:** ~20분 (자동 설치기 사용 시)  
@@ -23,8 +23,8 @@ sudo apt install gcc-arm-none-eabi make python3 python3-pip
 ## Step 1: 자동 설치
 
 ```bash
-tar -xzf ClaudeRTOS-Insight-v3.9.1-FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0
+tar -xzf ClaudeRTOS-Insight-v4.2.0-FINAL.tar.gz
+cd ClaudeRTOS-Insight-v2.5.0   # 압축 해제 후 생성되는 디렉터리명
 
 # 내 프로젝트에 자동 통합 (ITM 모드)
 python3 install.py --project /path/to/my_stm32_project

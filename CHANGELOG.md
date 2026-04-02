@@ -618,3 +618,52 @@ debugger = RTOSDebuggerV3(
 - `docs/SYSTEM_REVIEW.md`: 새 아키텍처 + 알고리즘 상세
 
 ### Validation: 8/8 신규 + 20/20 기존 = ALL PASS
+
+## [4.2.0] — 2026-04-03 ✅ PRODUCTION READY
+
+### ② 시간 정규화 레이어
+- `host/analysis/time_normalizer.py` 신규
+- TimeNormalizer: OS timestamp_us / trace timestamp_cycles / RTOS uptime_ms 통합
+- DWT CYCCNT wrap-around 자동 보정 (23.8초 주기, 32-bit overflow 처리)
+- `merge_and_sort()`: OS 이벤트 + trace 이벤트 통합 정렬
+- `set_reference()`: 기준점 기반 절대 µs 계산
+
+### ① 호스트 EventPriorityQueue
+- `host/analysis/event_queue.py` 신규
+- CRITICAL(즉시)/HIGH(1회)/MEDIUM(3회)/LOW(5회) threshold
+- `on_critical` 콜백: CRITICAL 이벤트 즉시 알림
+- `classify_issue()`: 이슈 타입·패턴 ID·severity로 자동 분류
+- 펌웨어 V4 Priority Buffer(전송 손실 방지)와 역할 분리
+
+### ③ Context 구조화
+- `debugger_context.py` 수정
+  - `timeline` → `events` (이름 명확화)
+  - `resources` 섹션 추가: ResourceGraph.get_state() 결과
+    (mutex_holds, mutex_waits, mutex_holders)
+  - `candidates` 섹션 추가: Orchestrator 선별 후보 (④ Rule+AI Hybrid)
+  - `build_context()` 파라미터 추가: resource_state, analysis_candidates
+
+### ⑤ Causal Graph (DAG)
+- `host/analysis/causal_graph.py` 신규
+- CausalNode: event/issue/state/pattern 통합 노드
+- CausalEdge: causes/correlated_with/precedes/aggravates 방향 엣지
+- 사이클 방지 (DAG 유지): DFS 검사
+- ingest_*(): CorrelationEngine + StateMachine + ResourceGraph + Rule 통합
+- `root_causes()`: in-degree(causes)==0 노드 = 루트 원인
+- `longest_chains()`: DFS 최장 인과 체인
+- `to_context_dict()`: AI 컨텍스트용 압축 표현 (max_nodes=15)
+- 처리 시간: 0.08ms
+
+### ④ Rule+AI Hybrid (인터페이스 정리)
+- `debugger_context.py`: candidates 섹션으로 Orchestrator 후보 명시
+- AI는 "이 후보들의 원인을 분석하라" 역할에 집중
+- 교차검증 결과(cross_validated) candidates에 포함
+
+### 문서 업데이트
+- `docs/SYSTEM_REVIEW.md`: V4.2.0 신규 컴포넌트 상세 추가
+- `docs/QUICKSTART_COMPLETE.md` / `_ko`: V4.2.0으로 버전 통일
+- CHANGELOG.md 잔재 텍스트 정리
+
+### Validation: 7/7 신규 + 20/20 기존 = ALL PASS
+- TimeNormalizer, EventPriorityQueue, Context, Hybrid, CausalGraph
+- 전체 파이프라인: 0.06ms/회, N100 47,563× 여유
