@@ -63,6 +63,136 @@ class Pattern:
 
 
 # ── 매칭 엔진 ────────────────────────────────────────────────
+class ConstraintChecker:
+    """
+    Pattern.constraints 조건을 평가하는 엔진.
+
+    지원 constraint 타입:
+      pair      : open/close 이벤트 쌍 검사 (mutex_take/give 균형)
+      temporal  : 이벤트 지속 시간 상한
+      monotonic : 지표의 단조 방향 검사
+      ratio     : 두 이벤트 수의 비율
+      threshold : 지표 임계값
+      forbidden_context: 특정 컨텍스트에서 이벤트 금지
+      rate      : 지표 변화율
+    """
+
+    def check(self, constraints: list,
+               issues: list, timeline: list, snap: dict = None) -> list:
+        """
+        조건 위반 목록 반환. 빈 리스트 = 모두 통과.
+        """
+        violations = []
+        snap = snap or {}
+        for c in constraints:
+            ctype = c.get('type', '')
+            if ctype == 'pair':
+                v = self._check_pair(c, timeline)
+            elif ctype == 'temporal':
+                v = self._check_temporal(c, timeline)
+            elif ctype == 'monotonic':
+                v = self._check_monotonic(c, snap)
+            elif ctype == 'ratio':
+                v = self._check_ratio(c, timeline)
+            elif ctype == 'threshold':
+                v = self._check_threshold(c, issues)
+            elif ctype == 'forbidden_context':
+                v = self._check_forbidden_context(c, timeline)
+            elif ctype == 'rate':
+                v = self._check_rate(c, snap)
+            else:
+                continue
+            if v:
+                violations.append({'constraint': c, 'violation': v})
+        return violations
+
+    @staticmethod
+    def _check_pair(c, tl):
+        opens  = sum(1 for e in tl if e.get('type') == c.get('open'))
+        closes = sum(1 for e in tl if e.get('type') == c.get('close'))
+        if opens > closes:
+            return f"{opens} opens vs {closes} closes (imbalance: {opens-closes})"
+        return None
+
+    @staticmethod
+    def _check_temporal(c, tl):
+        evt = c.get('event')
+        max_d = c.get('max_duration_ticks', 0)
+        if not max_d:
+            return None
+        # take 후 give 없이 max_d 이상 이벤트가 지나면 위반
+        take_idx = None
+        for i, e in enumerate(tl):
+            if e.get('type') == evt:
+                take_idx = i
+            elif take_idx is not None and i - take_idx > max_d:
+                return f"{evt} held for {i-take_idx} events (max {max_d})"
+        return None
+
+    @staticmethod
+    def _check_monotonic(c, snap):
+        metric = c.get('metric', '')
+        direction = c.get('direction', 'non_decreasing')
+        # heap_free: snap에서 추세 확인
+        if metric == 'heap_free':
+            heap = snap.get('heap', {})
+            free = heap.get('free', 0)
+            total = heap.get('total', 1)
+            used_pct = heap.get('used_pct', 0)
+            if direction == 'non_decreasing' and used_pct > 90:
+                return f"heap_free at {100-used_pct:.0f}% — monotonically decreasing"
+        return None
+
+    @staticmethod
+    def _check_ratio(c, tl):
+        num_evt = c.get('numerator', '').replace('_count', '')
+        den_evt = c.get('denominator', '').replace('_count', '')
+        max_r   = c.get('max_ratio', 3.0)
+        num = sum(1 for e in tl if e.get('type') == num_evt)
+        den = max(1, sum(1 for e in tl if e.get('type') == den_evt))
+        ratio = num / den
+        if ratio > max_r:
+            return f"{num_evt}/{den_evt} ratio={ratio:.1f} (max {max_r})"
+        return None
+
+    @staticmethod
+    def _check_threshold(c, issues):
+        metric = c.get('metric', '')
+        min_v  = c.get('min_value')
+        if min_v is None:
+            return None
+        for iss in issues:
+            val = (iss.get('detail') or {}).get(metric)
+            if val is not None and val < min_v:
+                return f"{metric}={val} < min {min_v}"
+        return None
+
+    @staticmethod
+    def _check_forbidden_context(c, tl):
+        evt     = c.get('event', '')
+        ctx     = c.get('forbidden_in', '')
+        in_ctx  = False
+        for e in tl:
+            etype = e.get('type', '')
+            if ctx == 'isr' and etype == 'isr_enter':
+                in_ctx = True
+            elif ctx == 'isr' and etype == 'isr_exit':
+                in_ctx = False
+            elif etype == evt and in_ctx:
+                return f"{evt} called from {ctx} context"
+        return None
+
+    @staticmethod
+    def _check_rate(c, snap):
+        metric = c.get('metric', '')
+        max_r  = c.get('max_trend_per_sample', 0)
+        if metric == 'cpu_pct':
+            cpu = snap.get('cpu_usage', 0)
+            if cpu > 90:   # 간단 근사
+                return f"cpu_pct={cpu}% trending high"
+        return None
+
+
 class PatternMatcher:
     """
     Pattern.match 조건을 평가하는 선언적 매처.

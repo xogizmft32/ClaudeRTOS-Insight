@@ -193,6 +193,18 @@ class CorrelationEngine:
         self._last_snap = snap
 
     # ── 분석 진입점 ──────────────────────────────────────────
+    @staticmethod
+    def _calc_conf(factors: list) -> float:
+        """
+        (label, condition, weight) 리스트로 evidence 기반 confidence 계산.
+        base=0.30, 각 factor가 True이면 weight 누산, max 0.95.
+        """
+        base = 0.30
+        for _, cond, w in factors:
+            if cond:
+                base += w
+        return round(min(0.95, base), 2)
+
     def analyze(self, chain_max_steps: Optional[int] = None) -> List[CorrelationResult]:
         """
         chain_max_steps: None이면 __init__ 설정값 사용.
@@ -253,7 +265,12 @@ class CorrelationEngine:
                             f"wait_ticks: {ev.get('wait_ticks', '?')}",
                             f"task_id: {task_id}",
                         ],
-                        confidence=0.82,
+                        confidence=self._calc_conf([
+                    ('sequence_match',    True,                      0.25),
+                    ('name_known',        mname != maddr,            0.15),
+                    ('has_wait_ticks',    bool(ev.get('wait_ticks')),0.10),
+                    ('multiple_events',   len(tl) > 5,               0.10),
+                ]),
                         affected_tasks=[str(task_id)],
                         timestamp_us=ev.get('t_us', 0),
                     ))
@@ -272,7 +289,13 @@ class CorrelationEngine:
         total_alloc = sum(e.get('size', 0) for e in tl
                           if e.get('type') == 'malloc')
 
-        confidence = min(0.9, 0.5 + (ratio - 2.0) * 0.1)
+        confidence = self._calc_conf([
+            ('high_ratio',      ratio >= 2.0,           0.20),
+            ('very_high_ratio', ratio >= 4.0,           0.15),
+            ('large_alloc',     total_alloc > 256,      0.10),
+            ('many_mallocs',    mallocs >= 5,           0.10),
+            ('no_frees',        frees == 0,             0.10),
+        ])
 
         # 누수 의심 태스크 (malloc을 가장 많이 한 task_id)
         from collections import Counter
@@ -337,7 +360,12 @@ class CorrelationEngine:
                         f"malloc size: {ev.get('size','?')}B",
                         f"ptr: {ev.get('ptr','?')}",
                     ],
-                    confidence=0.95,
+                    confidence=self._calc_conf([
+                        ('isr_sequence',   True,                        0.35),
+                        ('size_known',     bool(ev.get('size')),        0.10),
+                        ('irq_known',      isr_num != '?',            0.10),
+                        ('recent',         ev.get('t_us',0) > 0,     0.10),
+                    ]),
                     timestamp_us=ev.get('t_us', 0),
                 ))
         return results
@@ -386,7 +414,11 @@ class CorrelationEngine:
                     f"priority: {task.get('priority', '?')}",
                     f"state: {task.get('state_name', '?')}",
                 ],
-                confidence=0.65,
+                confidence=self._calc_conf([
+                    ('switch_out_only', True,                      0.20),
+                    ('task_info_known', task is not None,          0.15),
+                    ('not_running',     (task or {}).get('state_name') != 'Running', 0.10),
+                ]),
                 affected_tasks=[str(tid)],
             ))
         return results
@@ -398,7 +430,12 @@ class CorrelationEngine:
         results = []
         for name, prev, curr in drops:
             drop = prev - curr
-            confidence = min(0.9, 0.5 + drop / 100.0)
+            confidence = self._calc_conf([
+                ('drop_significant', drop >= 30,   0.25),
+                ('drop_large',       drop >= 60,   0.15),
+                ('hwm_low',          curr < 50,    0.15),
+                ('hwm_critical',     curr < 20,    0.10),
+            ])
             results.append(CorrelationResult(
                 pattern_id='CORR-005',
                 severity='High' if curr < 50 else 'Medium',
@@ -457,7 +494,13 @@ class CorrelationEngine:
                 f"current free: {last_free}B",
                 f"samples: {len(snaps)}",
             ],
-            confidence=min(0.85, 0.5 + abs(trend) / 500),
+            confidence=self._calc_conf([
+                ('trend_negative',   trend < -100,    0.20),
+                ('trend_steep',      trend < -300,    0.15),
+                ('trend_critical',   trend < -1000,   0.15),
+                ('low_free',         last_free / max(total, 1) < 0.2, 0.10),
+                ('enough_samples',   len(snaps) >= 10, 0.05),
+            ]),
         )]
 
 
