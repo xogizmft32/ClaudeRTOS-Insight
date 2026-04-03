@@ -1,7 +1,7 @@
 # Safety Design Guidelines
 ## ClaudeRTOS-Insight Safety-Critical Design Principles
 
-**Version:** 3.9.1  
+**Version:** 4.2.0  
 **Target Standard:** IEC 61508 SIL4 principles  
 **Status:** Design guidelines (NOT formally certified)
 
@@ -49,7 +49,7 @@ For certification support, consult accredited certification body (TÜV, UL, etc.
 
 ---
 
-**Version:** 3.9.1  
+**Version:** 4.2.0  
 **Status:** Design Guidelines (NOT Certified)
 
 ⚠️ **This is a development tool, not a certified safety component.**

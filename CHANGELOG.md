@@ -1,3 +1,11 @@
+# ClaudeRTOS-Insight — CHANGELOG
+
+> **Built with Vibe Coding × Claude**  
+> 이 프로젝트는 자연어 의도 설명 → AI 코드 생성 → 개발자 검토 협업 방식(바이브 코딩)으로 개발됐습니다.  
+> 개발 기간: 2026-03-19 ~ 2026-04-03 | 총 버전: v2.3.0 → v4.2.0 | 파일: 99개
+
+---
+
 # Changelog — ClaudeRTOS-Insight
 
 ## [3.1.0] — 2026-03-24 ✅ PRODUCTION READY

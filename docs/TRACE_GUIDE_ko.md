@@ -2,9 +2,11 @@
 
 > 영문 버전: `docs/TRACE_GUIDE.md`
 
+> ClaudeRTOS-Insight — 바이브 코딩 × Claude로 시작된 프로젝트입니다.
+
 ## 개요
 
-ClaudeRTOS V3.9은 **DWT 하드웨어 카운터**로 오버헤드 없이 ISR 빈도를 측정하고,
+ClaudeRTOS V4.2는 **DWT 하드웨어 카운터**로 오버헤드 없이 ISR 빈도를 측정하고,
 **소프트웨어 hook**으로 태스크 전환과 Mutex 타이밍을 추적합니다.
 
 | 방법 | 오버헤드 | 얻을 수 있는 정보 |

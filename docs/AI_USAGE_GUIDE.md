@@ -1,4 +1,6 @@
-# AI Analysis Guide — ClaudeRTOS-Insight V3.9.1
+# AI Analysis Guide — ClaudeRTOS-Insight V4.2.0
+
+> Built with Vibe Coding × Claude. See [README](../README.md#about-vibe-coding).
 
 ## Core Principle
 
@@ -9,7 +11,7 @@ AI does **not** participate in real-time control loops.
 
 ---
 
-## AI Provider Selection (New in V3.9.1)
+## AI Provider Selection (New in V4.2.0)
 
 Switch AI backends without changing analysis logic:
 

@@ -1,8 +1,11 @@
 # ClaudeRTOS-Insight V4.2.0 — Quick Start Guide
 
 **Goal:** Install → Build → Flash → Connect Host → AI Debug  
-**Time:** ~20 minutes (with auto-installer)  
-**AI analysis cost:** ~$0.015/issue (postmortem mode default)
+**Time:** ~20 minutes  
+**AI cost:** ~$0.015/issue (postmortem), $0 with Ollama
+
+> This project was started via **Vibe Coding** — natural language intent → AI-generated code.  
+> See [README.md](../README.md#about-vibe-coding) for details.
 
 ---
 
@@ -11,194 +14,177 @@
 ### Hardware
 - STM32 Nucleo-F446RE (or any STM32F4xx)
 - USB cable
-- (Recommended) J-Link EDU Mini — for high-speed SWO
+- (Recommended) J-Link EDU Mini for high-speed SWO
 
 ### Software (Linux/Ubuntu)
 ```bash
 sudo apt install gcc-arm-none-eabi make python3 python3-pip
+pip3 install anthropic   # or: openai / google-generativeai
 ```
 
 ---
 
-## Step 1: Auto-Install
+## Step 1: Extract & Install
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-v4.2.0-FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0   # 압축 해제 후 생성되는 디렉터리명
+cd ClaudeRTOS-Insight-v2.5.0   # extracted directory name
 
-# Auto-integrate into your project (ITM mode)
+# Auto-integrate into your project
 python3 install.py --project /path/to/your_project
 
 # UART mode
 python3 install.py --project /path/to/your_project --transport uart
 
-# Check installation
+# Verify installation
 python3 install.py --check /path/to/your_project
 ```
 
 Auto-installed items:
 - 24 ClaudeRTOS source files → `project/claudertos/`
-- `FreeRTOSConfig.h` 7 required settings auto-patched (backup created)
-- CMake / Makefile integration snippets generated
+- `FreeRTOSConfig.h` auto-patched (7 settings + trace hooks)
+- `CLAUDERTOS_TRACE_ENABLED` guard added
 
 ---
 
-## Step 2: Add 3 Lines to main.c
+## Step 2: Add to main.c
 
 ```c
 #include "os_monitor_v3.h"
 #include "transport.h"
-#include "trace_config.h"   // Lightweight trace (optional)
+#include "trace_events.h"   // Trace V2 (lock-free, DWT CYCCNT)
 
 int main(void) {
     HAL_Init();
     SystemClock_Config();
 
-    // Initialize before scheduler (heap_total boot cache)
-    DWT_Init(180000000U);
+    DWT_Init(180000000U);        // enable DWT CYCCNT + EXCCNT
     Transport_Init(180000000U);
     OSMonitorV3_Init();
-    TraceEvents_Init();   // optional
+    TraceEvents_Init();          // lock-free ring buffer init
+
+    s_mutex = xSemaphoreCreateMutex();
+    TraceEvents_RegisterMutex(s_mutex, "AppMutex");  // named mutex
 
     vTaskStartScheduler();
 }
 ```
 
-### Trace Mode Selection (trace_config.h / compiler flags)
+### Trace Mode (trace_config.h)
 
-| Flag | Mode | RAM | CPU Impact |
-|------|------|-----|-----------|
-| (default) | FULL — ring buffer, all events | 4KB | ~50 cycles/event |
-| `-DCLAUDERTOS_TRACE_MODE=1` | STAT — counters only | 28B | ~3 cycles/event |
+| Flag | Mode | RAM | Overhead |
+|------|------|-----|---------|
+| (default) | FULL — all events | 4KB | 0.028% CPU |
+| `-DCLAUDERTOS_TRACE_MODE=1` | STAT — counters only | 28B | ~0 |
 | `-DCLAUDERTOS_TRACE_MODE=2` | OFF — zero overhead | 0B | 0 |
-| `-DTRACE_SAMPLE_RATE=4` | FULL, 1-in-4 sampling | 4KB | ~12 cycles/event |
-
-### Lightweight Trace Without Hook (DWT Hardware)
-```c
-// No FreeRTOS hook needed — DWT EXCCNT counts ISR entries automatically
-uint32_t isr_count = TRACE_DWT_ISR_COUNT();  // hardware counter, zero overhead
-```
+| `-DTRACE_SAMPLE_RATE=4` | FULL, 1-in-4 sampling | 4KB | 0.007% CPU |
 
 ---
 
-## Step 3: Build
+## Step 3: Build & Flash
 
 ```bash
 cd firmware/examples/demo/
-
-# ITM mode (default)
 make -j4
-
-# UART mode
-make -j4 TRANSPORT=UART
-
-# Stat-only trace (minimal RAM/CPU)
-make -j4 CFLAGS="-DCLAUDERTOS_TRACE_MODE=1"
-```
-
----
-
-## Step 4: Flash
-
-```bash
 make flash          # J-Link
 make flash-stlink   # ST-Link (Nucleo built-in)
 ```
 
-Expected output (SWO or serial at 115200):
+Expected output (SWO or serial):
 ```
-ClaudeRTOS-Insight V3.9.1.0 Started [ITM]
+ClaudeRTOS-Insight V4.2.0 Started [ITM]
 ```
 
 ---
 
-## Step 5: Connect Host
+## Step 4: Connect Host
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-
 # Protocol validation (no hardware needed)
 python3 examples/integrated_demo.py --validate
 
 # J-Link ITM
+export ANTHROPIC_API_KEY=sk-ant-...
 python3 examples/integrated_demo.py --port jlink
 
 # UART
 python3 examples/integrated_demo.py --port uart:/dev/ttyUSB0
 
-# AI mode selection
-python3 examples/integrated_demo.py --port jlink --ai-mode offline
+# AI mode
 python3 examples/integrated_demo.py --port jlink --ai-mode postmortem  # default
-python3 examples/integrated_demo.py --port jlink --ai-mode realtime
+python3 examples/integrated_demo.py --port jlink --ai-mode offline     # no AI
 ```
 
 ---
 
-## Step 6: Understand AI Debug Results
+## Step 5: AI Provider Selection
+
+```bash
+# Switch AI without changing code
+export CLAUDERTOS_AI_PROVIDER=anthropic   # Claude (default)
+export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
+export CLAUDERTOS_AI_PROVIDER=google      # Gemini
+export CLAUDERTOS_AI_PROVIDER=ollama      # Local, $0 cost
+```
+
+See `docs/AI_USAGE_GUIDE.md` for full details.
+
+---
+
+## Step 6: Understand Results
 
 ### AI Call Timing (postmortem default)
 ```
-Issue detected 1st time  →  [local display only]
-Issue detected 2nd time  →  [local display only]
-Issue detected 3rd time  →  [AI_READY] ← Claude API called here
-Issue detected 4th+      →  cache returned (no re-call, 24h TTL)
+Issue detected 1st → local display only
+Issue detected 2nd → local display only
+Issue detected 3rd → AI_READY → Claude/GPT/Gemini called
+Issue 4th+         → cache returned (24h TTL)
 ```
 
-### Pattern DB — Zero-Cost Local Diagnosis
-Known patterns are diagnosed locally before calling Claude:
-
-| Pattern | Trigger | Cost |
-|---------|---------|------|
-| KP-001: Mutex Timeout → Priority Inversion | mutex_timeout + priority_inversion | $0 |
-| KP-002: Repeated Malloc → Fragmentation | malloc × 5 + low_heap | $0 |
-| KP-003: Stack HWM Critical | stack_hwm < 20W | $0 |
-| KP-004: ISR malloc (Forbidden) | isr_enter → malloc | $0 |
-| KP-005: CPU + Heap Saturation | cpu_creep + heap_shrink | $0 |
-
-Add custom patterns: `host/patterns/custom_patterns.json`
-
-### AI Output (Structured JSON → Human Readable)
+### Analysis Pipeline Output
 ```
-🔴 [Critical] stack_overflow_imminent — DataProcessor
-   DataProcessor 스택 오버플로우 임박 (14 words = 56 bytes)
-   근본 원인 (신뢰도 85%): 재귀 호출 깊이가 256 words 스택을 초과
-   인과 체인: malloc(128) → recursive_call → stack_exhaustion → hwm=14W
+[Rule]        stack_overflow_imminent: HighTask hwm=15W
+[Resource]    RG-001 DEADLOCK: Task0↔Task1 cycle (conf=0.95) ★교차검증
+[Context]     resources.mutex_holds: Task0→Mutex1, Task1→Mutex2
+[CausalGraph] root_cause: Deadlock cycle → HighTask blocked
+
+🔴 [Critical] stack_overflow_imminent — HighTask
+   HighTask 스택 오버플로우 임박 (15 words = 60 bytes)
+   근본 원인 (신뢰도 91%): ISR 콜백에서 재귀 호출로 스택 소진
+   인과 체인: mutex_take → recursive_cb → stack_exhaustion → hwm=15W
    수정:
-     파일: main.c:249
+     파일: main.c:267
      Before: xTaskCreate(..., 256, ...);
      After:  xTaskCreate(..., 512, ...);
 ```
 
----
+### Zero-Cost Local Diagnosis (Pattern DB)
+
+| Pattern | Trigger | Cost |
+|---------|---------|------|
+| KP-001: Mutex Timeout → Priority Inversion | mutex_timeout + priority_inversion | $0 |
+| KP-002: Repeated Malloc → Fragmentation | malloc×5 + low_heap | $0 |
+| KP-003: Stack HWM Critical | stack_hwm < 20W | $0 |
+| KP-004: ISR malloc (Forbidden) | isr_enter → malloc | $0 |
+| KP-005: CPU + Heap Saturation | cpu_creep + heap_shrink | $0 |
+
+Add custom: `host/patterns/custom_patterns.json`
 
 ---
-
-## AI Provider Selection
-
-Switch AI backend with one environment variable:
-
-```bash
-export CLAUDERTOS_AI_PROVIDER=anthropic   # default (Claude)
-export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
-export CLAUDERTOS_AI_PROVIDER=google      # Gemini
-export CLAUDERTOS_AI_PROVIDER=ollama      # local, $0 cost
-```
-
-See `docs/AI_USAGE_GUIDE.md` for details.
 
 ## FAQ
 
-**Q: Does it work without `trace_events.h` hooks?**  
-A: Yes. OS snapshot collection (CPU%, heap, stack HWM) works without any hooks. Trace is optional and adds timeline events for deeper analysis.
+**Q: Does it work without trace hooks?**  
+A: Yes. OS snapshot (CPU%, heap, stack HWM) works without any hooks. Trace is optional.
 
-**Q: How to add custom known patterns?**  
-A: Create `host/patterns/custom_patterns.json` following the same schema as `known_patterns.json`. It is auto-loaded and takes precedence over built-in patterns.
+**Q: How to add custom patterns?**  
+A: Create `host/patterns/custom_patterns.json` with the same schema as `known_patterns.json`.
 
-**Q: Which AI mode should I use?**  
-A: See `docs/AI_USAGE_GUIDE.md` for details. Summary: production=`offline`, debugging=`postmortem` (default), dev fast feedback=`realtime`.
+**Q: How is timestamp normalized?**  
+A: `TimeNormalizer` converts DWT CYCCNT (cycles), RTOS tick (uptime_ms), and packet timestamp_us into a unified µs timeline for accurate event ordering.
 
 ---
 
-**Version:** 3.8.0 | **Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+  
-**Validation:** 20/20 PASS | **AI Cost:** ~$0.015/issue  
-**Protocol:** Binary V4 (field-based, endian-explicit, backward-compatible with V3)
+**Version:** 4.2.0 | **Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+  
+**Validation:** 20/20 PASS | **Protocol:** Binary V4 (field-based, V3 compatible)  
+**Started with:** Vibe Coding × Claude

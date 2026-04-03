@@ -1,6 +1,8 @@
-# AI 분석 활용 가이드 (한국어) — ClaudeRTOS-Insight V3.9.1
+# AI 분석 활용 가이드 (한국어) — ClaudeRTOS-Insight V4.2.0
 
 > 영문 버전: `docs/AI_USAGE_GUIDE.md`
+
+> 바이브 코딩 × Claude로 개발된 프로젝트입니다. [README](../README.md#about-vibe-coding) 참고.
 
 ## 핵심 원칙
 
@@ -11,7 +13,7 @@ AI는 실시간 제어 루프에 관여하지 않습니다.
 
 ---
 
-## AI Provider 선택 (V3.9.1 신규)
+## AI Provider 선택 (V4.2.0 신규)
 
 코드 변경 없이 AI 백엔드를 교체할 수 있습니다:
 

@@ -1,7 +1,7 @@
 # Fault Injection Testing Guide
 ## Automated Error Handling Verification
 
-**Version:** 3.9.1  
+**Version:** 4.2.0  
 **Purpose:** Verify system behavior under fault conditions
 
 ---
@@ -538,5 +538,5 @@ Fault injection testing provides confidence that:
 
 ---
 
-**Version:** 3.9.1  
+**Version:** 4.2.0  
 **Last Updated:** 2026-03-19

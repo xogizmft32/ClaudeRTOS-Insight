@@ -1,4 +1,4 @@
-# System Architecture Review — ClaudeRTOS-Insight V4.1
+# System Architecture Review — ClaudeRTOS-Insight V4.2.0
 
 ## Analysis Pipeline
 
