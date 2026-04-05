@@ -1,0 +1,30 @@
+# ClaudeRTOS-Insight — Docker Compose
+# 사용:
+#   docker-compose run --rm claudertos --validate
+#   docker-compose run --rm claudertos --port uart:/dev/ttyUSB0
+
+version: '3.8'
+
+services:
+  claudertos:
+    build: .
+    image: claudertos-insight:latest
+    environment:
+      # AI Provider 선택 (기본: anthropic)
+      - CLAUDERTOS_AI_PROVIDER=${CLAUDERTOS_AI_PROVIDER:-anthropic}
+      # API 키 (호스트 환경 변수에서 주입)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      # 세션 파일 저장
+      - ./sessions:/app/sessions
+      # 커스텀 패턴 DB
+      - ./host/patterns:/app/host/patterns
+      # AI 응답 캐시 (세션 간 지속)
+      - ${HOME}/.claudertos_cache:/root/.claudertos_cache
+    # UART 포트 접근 (Linux)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    command: ["python3", "examples/integrated_demo.py", "--validate"]

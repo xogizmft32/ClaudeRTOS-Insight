@@ -1,206 +1,221 @@
 # System Architecture Review — ClaudeRTOS-Insight
 
-## Analysis Pipeline
+> **구현 상태**: 이 문서는 실제 코드와 동기화되어 있습니다.  
+> 모든 컴포넌트가 `host/` 디렉터리에 구현되어 있습니다.
+
+---
+
+## 용어 정의
+
+| 용어 | 의미 |
+|------|------|
+| **causal_chain** | 선형 이벤트 시퀀스 (`List[str]`). 예: `["mutex_take", "timeout", "blocked"]` |
+| **causal_graph** | DAG 기반 인과관계 그래프 (`GlobalCausalGraph`). 복수 원인, 반복 패턴 누산 |
+| **event_queue** | 호스트 분석 우선순위 큐 (`EventPriorityQueue`). Aging/RateLimit/Adaptive |
+| **priority** | severity 기반 이슈 심각도 (Critical/High/Medium/Low) → event_queue로 라우팅 |
+
+---
+
+## 전체 파이프라인
 
 ```
-Firmware (STM32 @ 180MHz)
-  └── Binary Protocol V4 (ITM/UART)
-         │
-Host (N100) — Analysis Pipeline
+STM32 Firmware (Cortex-M4 @ 180MHz)
+  ├─ TraceEvents V2 (lock-free LDREX/STREX)
+  │    traceTASK_SWITCHED_IN/OUT  → ctx_switch 이벤트
+  │    traceTAKE/GIVE_MUTEX       → mutex 이벤트
+  │    DWT EXCCNT                 → ISR 총 진입 횟수 (hook 없음, 오버헤드 0)
+  │    DWT CYCCNT                 → 타임스탬프 (나눗셈 없음, ~3 cycles)
+  └─ Binary Protocol V4 (WIRE_PUT 매크로, endian 명시)
+         │  ITM(SWO) 또는 UART
+         ▼
+Host (N100 PC)
+  ├─ [1]  collector.py           ITM SWO / UART 수신, 포트별 누산
   │
-  ├─ [1] binary_parser.py     V3/V4, CRC, sequence gap detection
+  ├─ [2]  binary_parser.py       V3/V4 패킷 파싱, CRC 검증, seq gap 감지
+  │         cpu_hz 파라미터 → _cycles_to_us() 변환
   │
-  ├─ [2] analyzer.py          Rule-based (<1ms)
-  │        check_stack, check_heap, check_cpu,
-  │        check_priority_inversion, check_starvation
+  ├─ [3]  time_normalizer.py     ★ 타임스탬프 통합 정규화
+  │         CYCCNT(cycles) / packet_ts(µs) / uptime_ms → 단일 µs 기준
+  │         CYCCNT wrap-around 자동 보정 (23.8초 주기)
   │
-  ├─ [3] prefilter.py         PatternDB KP matching ($0)
-  │       + ConstraintChecker  temporal / pair / monotonic
+  ├─ [4]  replay.py              ★ Deterministic Replay
+  │         PacketRecorder: 수신 패킷 → .claudertos_session 파일 저장
+  │         SessionReplayer: 파일 재생 → 동일 분석 결과 보장
   │
-  ├─ [4] correlation_engine.py  CORR-001~006
-  │       Evidence-based confidence (not hardcoded)
+  ├─ [5]  analyzer.py            Rule-based 이슈 감지 (<1ms)
+  │         check_stack, check_heap, check_cpu,
+  │         check_priority_inversion, check_starvation
   │
-  ├─ [5] state_machine.py     Task state transitions (NEW)
-  │       SM-001 long BLOCKED, SM-002 starvation,
-  │       SM-003 high switch rate
+  ├─ [6]  event_queue.py         ★ 호스트 이벤트 우선순위 큐
+  │         CRITICAL(즉시) / HIGH(1회) / MEDIUM(3회) / LOW(5회)
+  │         Aging: 오래 대기한 이벤트 우선순위 자동 상승
+  │         Rate Limiting: CRITICAL burst 10초/5회 제한
+  │         Adaptive Threshold: 이슈 빈도로 자동 조정
   │
-  ├─ [6] resource_graph.py    Mutex hold/wait graph (NEW)
-  │       RG-001 deadlock cycle (DFS),
-  │       RG-002 contention
+  ├─ [7]  prefilter.py           PatternDB KP 매칭 + Constraint 검사 ($0)
+  │         ConstraintChecker: pair / temporal / monotonic / ratio 등
   │
-  ├─ [7] orchestrator.py      Result integration (NEW)
-  │       Cross-validation: conf + 0.12 if multi-analyzer agree
-  │       Deduplication, severity sort
+  ├─ [8]  correlation_engine.py  CORR-001~006 멀티이벤트 패턴
+  │         evidence 기반 confidence (하드코딩 없음)
   │
-  ├─ [8] token_optimizer.py   Context compression
+  ├─ [9]  state_machine.py       Task 상태 전이 추적
+  │         SM-001 장기 BLOCKED / SM-002 기아 / SM-003 과도한 스위치
   │
-  └─ [9] AI Provider          Cloud or local
-          anthropic / openai / google / ollama
-```
-
-## Component Roles (Hybrid AI)
-
-| Layer | Component | Role | Latency | Cost |
-|-------|-----------|------|---------|------|
-| Rule | analyzer.py | Threshold detection | <1ms | $0 |
-| Pattern | prefilter.py | Known issue DB | <1ms | $0 |
-| Constraint | ConstraintChecker | Invariant violation | <1ms | $0 |
-| Correlation | correlation_engine | Multi-event patterns | <0.5ms | $0 |
-| Graph | state_machine | State transition anomaly | <0.3ms | $0 |
-| Graph | resource_graph | Deadlock cycle (DFS) | <0.2ms | $0 |
-| Integration | orchestrator | Cross-validate, merge | <0.1ms | $0 |
-| LLM | AI Provider | Explanation, fix | ~1-3s | $0.003-0.008 |
-
-**Total local processing: <3ms** — AI called only when needed.
-
-## Deadlock Detection Algorithm
-
-`resource_graph.py` builds a Wait-For Graph from mutex events:
-
-```
-mutex_take(task=A, mutex=M1) → A holds M1
-mutex_take(task=A, mutex=M2) → A waits M2 (M2 held by B)
-mutex_take(task=B, mutex=M1) → B waits M1 (M1 held by A)
-
-Wait-For Graph:
-  A → B (A waits for mutex held by B)
-  B → A (B waits for mutex held by A)
-
-DFS cycle detection: A → B → A = DEADLOCK
-```
-
-Confidence is evidence-based:
-```python
-confidence = _calc_conf([
-    ('cycle_detected',   True,               0.40),
-    ('multiple_tasks',   len(cycle) >= 2,    0.20),
-    ('names_known',      mutex_names_exist,  0.10),
-    ('recent_events',    event_count > 5,    0.10),
-])  # base=0.30, max=0.95
-```
-
-## Confidence Calibration
-
-All confidence values are now evidence-based (not hardcoded):
-
-```python
-# Evidence-based pattern
-def _calc_conf(factors: List[Tuple]) -> float:
-    base = 0.30
-    for _, condition, weight in factors:
-        if condition:
-            base += weight
-    return min(0.95, base)
-
-# Example: CORR-001 (mutex deadlock)
-conf = _calc_conf([
-    ('sequence_match',    True,            0.25),  # TAKE→TIMEOUT
-    ('name_known',        mname != maddr,  0.15),  # named mutex
-    ('has_wait_ticks',    wait_ticks > 0,  0.10),  # timing info
-    ('multiple_events',   len(tl) > 5,    0.10),  # enough history
-])  # range: 0.30 ~ 0.80
-```
-
-## Few-shot Pattern Learning
-
-Session → Auto-learn → PatternDB:
-
-```python
-learner = SessionLearner(confidence_threshold=0.80, min_occurrences=2)
-
-# During session
-learner.record(issue, parsed_ai_response)
-
-# After session
-candidates = learner.get_candidates()   # confidence > 0.8, seen >= 2x
-saved = learner.save_to_db(auto_save=True)
-# Saved to: host/patterns/custom_patterns.json
-# Next session: zero API cost for same issue
-```
-
-## Validation Results
-
-```
-▶ Resource Graph (deadlock):   0.10ms, confidence=0.95 ✅
-▶ State Machine:               0.10ms, SM-001/002 ✅
-▶ Orchestrator (8 unified):    0.07ms, 3 cross-validated ✅
-▶ Confidence calibration:      evidence-based ✅
-▶ Few-shot learning:           2 occurrences → candidate ✅
-▶ Constraint (mutex imbalance):4 takes, 0 gives detected ✅
-▶ Pipeline avg:                0.05ms/cycle (58,000× headroom) ✅
-▶ Existing 20/20 PASS:         maintained ✅
+  ├─ [10] resource_graph.py      Mutex hold/wait DAG + Deadlock DFS
+  │         RG-001 순환 의존성 (Wait-For Graph) / RG-002 경합
+  │
+  ├─ [11] orchestrator.py        결과 통합 + 교차 검증
+  │         Rule+Corr+SM+RG → 중복 제거, 심각도 정렬
+  │         교차 검증: 복수 분석기 동의 시 confidence +0.12
+  │
+  ├─ [12] causal_graph.py        ★ GlobalCausalGraph (DAG)
+  │         세션 전체 누산 그래프 (매 스냅샷 재생성 아님)
+  │         의미 기반 자동 연결 (_SEMANTIC_RULES, 패턴 ID 하드코딩 없음)
+  │         노드 병합: 반복 발생 시 occurrence_count 증가
+  │         root_causes(): in-degree(CAUSES)==0 노드
+  │
+  ├─ [13] token_optimizer.py     AI 컨텍스트 압축
+  │         runtime_us 제거 (AI 미활용), 타임라인 중요도 슬라이싱
+  │         token_budget 기반 자동 조정
+  │
+  ├─ [14] debugger_context.py    AI 입력 JSON 조립
+  │         {session, system, tasks, events, resources, anomalies, candidates}
+  │         resources: ResourceGraph.get_state() (mutex hold/wait)
+  │         candidates: Orchestrator 선별 후보 (AI 역할 집중)
+  │
+  ├─ [15] response_cache.py      ★ AI 응답 Semantic LRU Cache
+  │         SemanticKeyBuilder: hwm=14 ≈ hwm=15 → 같은 버킷
+  │         LRU 교체, max_entries=200
+  │         영속화: ~/.claudertos_cache/ai_responses.json
+  │         TTL: Critical=1h, 그 외=24h
+  │
+  └─ [16] AI Provider            Cloud 또는 Local LLM
+           providers/anthropic.py  Claude Sonnet(TIER1) / Haiku(TIER2)
+           providers/openai.py     GPT-4o / GPT-4o-mini
+           providers/google.py     Gemini Pro / Flash
+           providers/ollama.py     Llama3 / Qwen2.5 (비용 $0)
+           환경 변수: CLAUDERTOS_AI_PROVIDER
 ```
 
 ---
 
-##  추가 컴포넌트
+## 우선순위 처리 흐름
 
-### ② TimeNormalizer (`host/analysis/time_normalizer.py`)
-
-```
-타임스탬프 소스         단위          변환
-───────────────────────────────────────────
-OS 스냅샷 packet_ts    µs (V3)      그대로
-trace_events CYCCNT    cycles (V4)  ÷ cpu_hz × 1e6
-RTOS tick uptime_ms    ms           × 1000
-───────────────────────────────────────────
-통합 기준: µs (uint64), CYCCNT wrap-around 자동 보정
-```
-
-### ① EventPriorityQueue (`host/analysis/event_queue.py`)
+severity 기반 이슈 → EventPriorityQueue → AI 라우팅:
 
 ```
-우선순위    임계값    해당 이슈
-─────────────────────────────────────────────
-CRITICAL    0 (즉시)  HardFault, ISR malloc, HWM<10
-HIGH        1         Deadlock, stack_risk, heap 고갈
-MEDIUM      3         Priority inversion, starvation
-LOW         5         Normal trace
-```
-펌웨어 V4 Priority Buffer (전송 손실 방지)와 역할이 다름.  
-호스트 큐는 분석 처리 우선순위를 결정한다.
-
-### ③ Context 구조화 (`debugger_context.py`)
-
-```json
-{
-  "session": {"cpu_hz": 180000000, "isr": {...}},
-  "system":  {"cpu_pct": 88, "heap": {...}},
-  "tasks":   [...],
-  "events":  [...],         // timeline → events (이름 변경)
-  "resources": {            // NEW: ResourceGraph 상태
-    "mutex_holds": {"0": ["0x20001234"]},
-    "mutex_waits": {"1": "0x20001238"}
-  },
-  "anomalies": [...],
-  "candidates": [...]       // NEW: Orchestrator 선별 후보 (Rule+AI ④)
-}
+이슈 감지 (analyzer.py)
+    │
+    ▼ classify_issue()
+EventPriorityQueue
+    ├─ CRITICAL (0): 즉시 on_critical 콜백
+    │   - hard_fault, stack_hwm<10, heap_exhaustion
+    │   - Rate Limit: 10초/5회 burst 제한
+    │
+    ├─ HIGH (1): 1회 flush_ready() 후 처리
+    │   - low_stack, priority_inversion, RG-001, SM-001
+    │
+    ├─ MEDIUM (3): 3회 후 처리
+    │   - high_cpu, task_starvation, SM-002
+    │   - Aging: 120초 초과 시 HIGH로 상승
+    │
+    └─ LOW (5): 5회 후 처리
+        - normal trace, ctx_switch
+        - Aging: 300초 초과 시 MEDIUM으로 상승
+        - MAX_QUEUE_SIZE=500 초과 시 자동 드롭
 ```
 
-### ⑤ CausalGraph (`host/analysis/causal_graph.py`)
+---
+
+## causal_chain vs causal_graph
+
+두 개념은 다르며, 코드에서 명확히 구분됩니다:
 
 ```
-노드 종류: event / issue / state / pattern
-엣지 종류: causes / correlated_with / precedes / aggravates
+causal_chain (선형, List[str]):
+  CorrelationResult.causal_chain = [
+      "mutex_take('AppMutex')",
+      "wait(100 ticks)",
+      "mutex_timeout → task blocked",
+  ]
+  → 단일 패턴의 이벤트 순서
 
-루트 원인 = in-degree(causes) == 0 인 노드
-최장 체인 = DFS로 가장 긴 causes 경로
-
-ingest 소스:
-  correlation_engine → CORR-001~006 패턴 노드
-  resource_graph     → RG-001~002 이슈 노드
-  state_machine      → SM-001~003 상태 노드
-  rule_issues        → rule_* 이슈 노드
+causal_graph (DAG, GlobalCausalGraph):
+  nodes: {CORR-001, RG-001, SM-001, rule_stack_overflow_imminent}
+  edges: RG-001 --causes--> SM-001
+         CORR-001 --correlated_with--> RG-001
+  → 복수 패턴 간의 인과 관계, 세션 누산
+  → root_causes(): 원인이 없는 노드 (in-degree=0)
 ```
 
-###  검증 결과
+---
+
+## ISR 추적 모델
 
 ```
-② TimeNormalizer:   cycles(180M) → 1,000,000µs ✅ wrap-around 보정 ✅
-① EventPriorityQueue: CRITICAL 즉시 콜백, flush_ready 순서 보장 ✅
-③ Context:           events + resources + candidates JSON 구조 ✅
-④ Hybrid:            Orchestrator → candidates → AI 집중 역할 ✅
-⑤ CausalGraph:       14 nodes, 6 edges, 루트 원인 탐지 0.08ms ✅
-전체 파이프라인: 0.06ms/회, N100 여유 47,563× ✅
-기존 20/20 PASS 유지 ✅
+현재 구현:
+  DWT EXCCNT (하드웨어): ISR 총 진입 횟수 → 오버헤드 0
+  task_id = 0xFF: trace 이벤트의 ISR 컨텍스트 표시
+
+한계 (알려진 제약):
+  EXCCNT는 전체 합산이므로 IRQ 번호별 분리 불가
+  개별 IRQ 추적은 각 핸들러에 1줄 추가 필요:
+    g_isr_count[__get_IPSR() - 16]++;
+
+AI 컨텍스트 전달:
+  session.isr.count_per_sample: 샘플 구간 총 ISR 진입 횟수
+  session.isr.ctx_switches: 컨텍스트 스위치 카운터 (SW)
 ```
+
+---
+
+## Deterministic Replay
+
+```
+녹화:
+  recorder = PacketRecorder("session.claudertos_session")
+  acc = ITMPortAccumulator(on_packet=recorder.record)
+  # ... 수신 루프 ...
+  recorder.stop()  → JSON Lines 파일 저장
+
+재생:
+  replayer = SessionReplayer("session.claudertos_session")
+  result = replayer.replay_full(engine, corr, rg, sm, orch)
+  print(f"데드락 {result.deadlocks}회 탐지")
+
+보장:
+  동일 파일 + 동일 분석기 버전 → 동일 결과
+  realtime=False: 즉시 재생 (분석·테스트용)
+  realtime=True:  실제 타이밍 재현 (UI 시연용)
+```
+
+---
+
+## 검증 결과
+
+```
+전 과정 시뮬레이션 (19/19 PASS):
+  설치 검증:              8/8 ✅
+  Binary Protocol V4:     ✅ 132B 패킷
+  ITM 수신 + 파싱:        ✅
+  TimeNormalizer:         ✅ CYCCNT→µs
+  Rule + Corr + SM + RG:  ✅ 1.08ms
+  Orchestrator 교차검증:  ✅ 3개
+  CausalGraph:            ✅ 9nodes/15edges
+  EventQueue:             ✅ Aging/RateLimit
+  AI 컨텍스트:            ✅ ~111 tokens
+  Semantic Cache:         ✅ put→get→persist
+  프로토콜 검증:          ✅ 20/20 PASS
+```
+
+---
+
+## 알려진 제약 및 로드맵
+
+| 항목 | 현재 | 개선 방향 |
+|------|------|---------|
+| ISR 개별 추적 | EXCCNT 합산만 | IRQ별 카운터 배열 (펌웨어 변경 필요) |
+| Priority Preemption | 1Hz MonitorTask 주기 | threading.Event 비동기 처리 |
+| Cache Invalidation | TTL 고정 | 펌웨어 재플래시 감지 → 자동 무효화 |
+| Docker | 없음 | Dockerfile + docker-compose.yml 제공 |
+| 테스트 | 20 checks | 경계값/race condition 시나리오 추가 |

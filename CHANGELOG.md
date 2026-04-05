@@ -737,3 +737,48 @@ debugger = RTOSDebuggerV3(
 - PHASE 5: AI 컨텍스트 구성 (events/resources/candidates, ~111 tokens)
 - PHASE 6: AI 응답 파싱 + Semantic Cache 저장/재조회/영속화
 - PHASE 7: 기존 프로토콜 검증 20/20 PASS 유지
+
+## [4.4.0] — 2026-04-04 ✅ PRODUCTION READY
+
+### 🔴 Deterministic Replay (`host/replay.py`)
+- `PacketRecorder`: 수신 패킷 → `.claudertos_session` JSON Lines 저장
+  - `start()` / `record(snapshot)` / `stop()` API
+  - 메타 헤더: cpu_hz, recorded_at, version
+- `SessionReplayer`: 파일 재생 → 동일 분석 결과 보장
+  - `snapshots(realtime=False)`: 즉시 재생 (분석용)
+  - `snapshots(realtime=True, speed=2.0)`: 타이밍 재현
+  - `replay_full(engine, corr, rg, sm, orch)`: 전체 파이프라인 일괄
+  - `ReplayResult`: 통계 (snapshots, critical, deadlocks, issues_by_type)
+- 용도: 현장 장애 재분석, 팀 공유, 회귀 테스트
+
+### 🟠 Docker 환경 고정
+- `Dockerfile`: python:3.11-slim, requirements.txt 버전 고정
+- `docker-compose.yml`: AI Provider 환경 변수 주입, 세션 파일 볼륨
+- `.python-version`: 3.11 명세
+- `host/requirements.txt`: Python 버전 명세 + 최소 설치 가이드
+
+### 🔴 문서-코드 완전 동기화
+- `SYSTEM_REVIEW.md` 전면 재작성:
+  - 파이프라인 [1]~[16] 모두 반영 (time_normalizer, event_queue, causal_graph, response_cache 추가)
+  - 용어 정의 테이블: causal_chain vs causal_graph 명확화
+  - 우선순위 처리 흐름: severity → EventPriorityQueue → AI
+  - ISR 추적 한계 명시
+  - 알려진 제약 및 로드맵 테이블
+- `QUICKSTART_COMPLETE_ko.md` 전면 재작성:
+  - Python 3.11+, venv, Docker 설치 단계 추가
+  - 재현성 요구사항 명시
+  - Replay 사용법 추가
+  - ISR 추적 한계 FAQ
+- `AI_USAGE_GUIDE_ko.md` 전면 재작성:
+  - AI 역할/비역할 명확화
+  - EventPriorityQueue 흐름 + Aging/Rate Limit 설명
+  - Semantic Cache 버킷 동작 설명
+  - TokenOptimizer 정책 + budget 가이드
+- `TEST_ENVIRONMENT.md` 전면 재작성:
+  - Docker 환경 설정 포함
+  - Fault Injection 상세 조건표 (허용 감지 시간 포함)
+  - Replay 시나리오 추가
+  - Semantic Cache 검증 코드
+  - 재현성 체크리스트
+
+### Validation: 25/25 PASS (Replay + Docker + Docs + 20/20 Protocol)

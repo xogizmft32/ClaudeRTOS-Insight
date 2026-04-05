@@ -1,373 +1,195 @@
-# Test Environment Specification
-## ClaudeRTOS-Insight
-
-**Date:** 2026-03-13
+# Test Environment — ClaudeRTOS-Insight
 
 ---
 
-## Hardware Platform
+## 개발·테스트 환경
 
-### Primary Target
+### 호스트
 
-- **Board:** STM32 Nucleo-F446RE
-- **MCU:** STM32F446RET6
-- **Core:** ARM Cortex-M4F with FPU
-- **Frequency:** 180 MHz (max)
-- **Flash:** 512 KB
-- **RAM:** 128 KB
-- **Debugger:** ST-Link/V2-1 (onboard)
+| 항목 | 권장 | 최소 |
+|------|------|------|
+| OS | Ubuntu 22.04 LTS | Ubuntu 20.04 / macOS 13 / WSL2 |
+| CPU | Intel N100 (4core) | 2코어 |
+| RAM | 8GB | 4GB |
+| Python | 3.11+ (`.python-version` 참조) | 3.9+ |
 
-### Verified Platforms
-
-| Platform | MCU | Frequency | Status |
-|----------|-----|-----------|--------|
-| Nucleo-F446RE | STM32F446RET6 | 180 MHz | ✅ Primary |
-| Nucleo-F767ZI | STM32F767ZIT6 | 216 MHz | ✅ Tested |
-| Nucleo-H743ZI | STM32H743ZIT6 | 480 MHz | ✅ Tested |
-| Custom STM32F4 | STM32F407VGT6 | 168 MHz | ✅ Compatible |
-
----
-
-## Software Environment
-
-### FreeRTOS
-
-- **Version:** v10.5.1 (released 2022-12-19)
-- **Source:** https://github.com/FreeRTOS/FreeRTOS-Kernel
-- **License:** MIT
-- **Configuration:** See FreeRTOSConfig.h
-
-**Verified Versions:**
-- v10.5.1 ✅ (Primary)
-- v10.4.6 ✅ (Compatible)
-- v10.3.1 ✅ (Compatible)
-
-### CMSIS
-
-- **Version:** v5.9.0
-- **Components:** CMSIS-Core, CMSIS-RTOS2 wrapper
-- **Source:** ARM CMSIS
-
-### STM32 HAL
-
-- **Version:** STM32Cube_FW_F4_V1.28.0
-- **Released:** 2023-11-03
-- **Components:** HAL Drivers, BSP
-
-### Compiler Toolchain
-
-- **Primary:** arm-none-eabi-gcc 12.2.1
-- **Alternative:** arm-none-eabi-gcc 10.3.1 ✅
-- **Alternative:** ARM Compiler 6.18 ✅
-- **Alternative:** IAR EWARM 9.30 ✅
-
-**Compiler Flags:**
-```makefile
-CFLAGS = -mcpu=cortex-m4 \
-         -mthumb \
-         -mfpu=fpv4-sp-d16 \
-         -mfloat-abi=hard \
-         -O2 \
-         -ffunction-sections \
-         -fdata-sections \
-         -Wall \
-         -Wextra \
-         -Werror \
-         -std=c11
-```
-
-### Development Tools
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| STM32CubeIDE | 1.13.0 | IDE (optional) |
-| STM32CubeMX | 6.9.0 | Code generation (optional) |
-| OpenOCD | 0.12.0 | Debugging |
-| J-Link | V7.88 | Alternative debugger |
-| make | 4.3 | Build system |
-| CMake | 3.25+ | Alternative build |
-
----
-
-## Python Environment
-
-### Version
-
-- **Python:** 3.10+ (tested on 3.10, 3.11, 3.12)
-- **Platform:** Linux, macOS, Windows
-
-### Required Packages
-
-```txt
-anthropic==0.18.1
-pylink-square==1.2.0
-pyserial==3.5
-numpy==1.24.0
-```
-
-### Installation
+### Docker (환경 고정 권장)
 
 ```bash
-pip install -r host/requirements.txt
+docker-compose build
+docker-compose run --rm claudertos --validate
 ```
 
-### Python Tools
+`Dockerfile`: python:3.11-slim 기반, `requirements.txt` 버전 고정.
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| pytest | 7.4+ | Unit testing |
-| black | 23.7+ | Code formatting |
-| pylint | 2.17+ | Static analysis |
-| mypy | 1.4+ | Type checking |
+### 펌웨어 타깃
+
+| 항목 | 값 |
+|------|-----|
+| 보드 | STM32 Nucleo-F446RE |
+| MCU | STM32F446RE (Cortex-M4) |
+| 클럭 | 180 MHz |
+| RTOS | FreeRTOS 10.0+ |
+| 컴파일러 | arm-none-eabi-gcc 12+ |
+| STM32Cube FW | F4 (버전 무관) |
+
+### 디버거
+
+| 도구 | 용도 |
+|------|------|
+| ST-Link v2 (Nucleo 내장) | 기본 플래시/디버그 |
+| J-Link EDU Mini | SWO ITM 고속 수집 (권장) |
+| UART (USB-TTL) | 폴백 전송 모드 |
 
 ---
 
-## Debug Probe Configuration
+## 테스트 시나리오
 
-### ST-Link/V2-1
-
-**Built-in on Nucleo boards**
-
-- SWD Interface: Yes
-- SWO Trace: Yes (max 2.25 MHz)
-- Virtual COM: Yes (115200 baud)
-
-**OpenOCD Configuration:**
-```tcl
-source [find interface/stlink.cfg]
-source [find target/stm32f4x.cfg]
-
-# Enable SWO
-tpiu config internal - uart off 180000000
-itm port 0 on
-```
-
-### J-Link
-
-**External probe (optional, better performance)**
-
-- SWD Interface: Yes
-- SWO Trace: Yes (max 50 MHz)
-- RTT: Yes
-
-**Configuration:**
-```bash
-# Connect
-JLinkExe -device STM32F446RE -if SWD -speed 4000
-
-# Start SWO
-SWOStart
-SWOView
-```
-
----
-
-## Build Configuration
-
-### Makefile-based Build
-
-```makefile
-# Project configuration
-PROJECT = claudertos_demo
-MCU = STM32F446xx
-CPU = -mcpu=cortex-m4
-
-# ClaudeRTOS sources
-SOURCES += \
-    ClaudeRTOS/core/crc32.c \
-    ClaudeRTOS/core/dwt_timestamp.c \
-    ClaudeRTOS/core/ring_buffer.c \
-    ClaudeRTOS/modules/os_monitor/os_monitor_v3.c
-
-# Include paths
-INCLUDES += \
-    -IClaudeRTOS/core \
-    -IClaudeRTOS/modules/os_monitor
-```
-
-### CMake-based Build
-
-```cmake
-# CMakeLists.txt
-cmake_minimum_required(VERSION 3.25)
-project(ClaudeRTOS_Demo C ASM)
-
-# ClaudeRTOS library
-add_library(claudertos STATIC
-    ClaudeRTOS/core/crc32.c
-    ClaudeRTOS/core/dwt_timestamp.c
-    ClaudeRTOS/core/ring_buffer.c
-)
-
-target_include_directories(claudertos PUBLIC
-    ClaudeRTOS/core
-)
-```
-
----
-
-## FreeRTOS Configuration
-
-### Critical Settings
-
-```c
-/* FreeRTOSConfig.h */
-
-#define configUSE_PREEMPTION                1
-#define configUSE_TIME_SLICING              0
-#define configUSE_TICKLESS_IDLE             0
-#define configCPU_CLOCK_HZ                  180000000UL
-#define configTICK_RATE_HZ                  1000
-#define configMAX_PRIORITIES                7
-#define configMINIMAL_STACK_SIZE            128
-#define configTOTAL_HEAP_SIZE               (64 * 1024)
-
-/* Runtime stats (REQUIRED) */
-#define configGENERATE_RUN_TIME_STATS       1
-#define configUSE_TRACE_FACILITY            1
-#define configUSE_STATS_FORMATTING_FUNCTIONS 1
-
-/* Hooks (REQUIRED for ClaudeRTOS) */
-#define configUSE_IDLE_HOOK                 0
-#define configUSE_TICK_HOOK                 0
-#define configUSE_MALLOC_FAILED_HOOK        1
-#define configCHECK_FOR_STACK_OVERFLOW      2
-
-/* Runtime stats timer */
-extern void vConfigureTimerForRunTimeStats(void);
-extern uint32_t vGetRunTimeCounterValue(void);
-
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() \
-    vConfigureTimerForRunTimeStats()
-#define portGET_RUN_TIME_COUNTER_VALUE() \
-    vGetRunTimeCounterValue()
-```
-
----
-
-## Memory Configuration
-
-### Flash Layout
-
-```
-0x08000000  ┌─────────────────┐
-            │ Vector Table    │  1 KB
-0x08000400  ├─────────────────┤
-            │ Application     │  400 KB
-0x08064000  ├─────────────────┤
-            │ ClaudeRTOS Code │  20 KB
-0x08069000  ├─────────────────┤
-            │ CRC32 Table     │  1 KB
-0x08069400  ├─────────────────┤
-            │ Reserved        │  ~90 KB
-0x08080000  └─────────────────┘
-```
-
-### RAM Layout
-
-```
-0x20000000  ┌─────────────────┐
-            │ .data/.bss      │  16 KB
-0x20004000  ├─────────────────┤
-            │ Heap            │  64 KB
-0x20014000  ├─────────────────┤
-            │ FreeRTOS Stacks │  32 KB
-0x2001C000  ├─────────────────┤
-            │ Ring Buffer     │  64 KB (ClaudeRTOS)
-0x2002C000  ├─────────────────┤
-            │ Reserved        │  16 KB
-0x20030000  └─────────────────┘
-```
-
----
-
-## Performance Benchmarks
-
-### Timing (STM32F446RE @ 180 MHz)
-
-| Operation | Typical | Worst-Case |
-|-----------|---------|------------|
-| `os_monitor_collect()` | 35 µs | 50 µs |
-| `CRC32_Calculate(512B)` | 12 µs | 20 µs |
-| `RingBuffer_Write(512B)` | 6 µs | 10 µs |
-| `DWT_GetTimestamp()` | 0.5 µs | 2 µs |
-
-### CPU Usage
-
-| Scenario | CPU % | Measurement |
-|----------|-------|-------------|
-| Idle (1 Hz OS monitor) | 0.15% | DWT cycle counter |
-| Normal (100 events/s) | 0.5% | Runtime stats |
-| Heavy (1000 events/s) | 0.8% | Runtime stats |
-
-### Memory Usage
-
-| Component | Flash | RAM |
-|-----------|-------|-----|
-| Core engine | 8 KB | 256 B |
-| CRC32 table | 1 KB | 0 B (ROM) |
-| Ring buffer | 2 KB | 64 KB |
-| OS monitor | 4 KB | 512 B |
-| **Total** | **~15 KB** | **~65 KB** |
-
----
-
-## Test Procedures
-
-### 1. Functional Test
+### 1. 프로토콜 자동 검증
 
 ```bash
-# Build firmware
-cd firmware/examples/full-system-demo
-make clean && make
-
-# Flash
-make flash
-
-# Verify
-python ../../../host/test_collector.py --duration 60
+python3 examples/integrated_demo.py --validate
+# 20개 체크 PASS 확인
 ```
 
-### 2. Stress Test
+체크 목록:
+- Binary Protocol V3/V4 인코딩/디코딩
+- CRC32 검증
+- Sequence gap 감지
+- Context switch 시뮬레이션 (6회)
+- 이슈 감지 (stack/heap/cpu/priority)
 
-```c
-/* Create high load */
-for (int i = 0; i < 10; i++) {
-    xTaskCreate(HighActivityTask, "Stress", 256, NULL, 2, NULL);
-}
+### 2. 데드락 시나리오
 
-/* Run for 24 hours */
-/* Monitor: No buffer overflow, no data corruption */
+```python
+# 두 태스크가 두 Mutex를 반대 순서로 획득
+# HighTask: Mutex1 보유 → Mutex2 요청
+# LowTask:  Mutex2 보유 → Mutex1 요청
+
+# 기대 결과:
+# - RG-001: Deadlock cycle 탐지 (confidence ≥ 0.85)
+# - SM-001: HighTask long BLOCKED
+# - CORR-001: mutex_timeout 시퀀스
+# - Orchestrator 교차검증: 3개 이상
 ```
 
-### 3. SIL4 Validation
+### 3. 스택 오버플로우 임박
 
-- Run static analysis (MISRA C:2012)
-- Execute unit tests (>95% coverage)
-- Perform WCET analysis
-- Validate CRC under fault injection
+```python
+# tasks[0].stack_hwm = 14W (< 20W threshold)
+# 기대 결과:
+# - analyzer: stack_overflow_imminent (Critical)
+# - KP-003: PatternDB 매칭 (로컬 진단, $0)
+# - causal_chain: malloc×N → stack_growth → hwm=14W
+```
+
+### 4. ISR malloc 금지 패턴
+
+```python
+# timeline: [isr_enter(IRQ=28), malloc(32B), isr_exit]
+# 기대 결과:
+# - CORR-003: ISR malloc violation (confidence ≥ 0.95)
+# - KP-004: PatternDB 매칭 즉시
+```
+
+### 5. Deterministic Replay
+
+```python
+from host.replay import PacketRecorder, SessionReplayer
+from host.analysis.analyzer import AnalysisEngine
+
+# 녹화 (시뮬레이션 데이터 사용)
+recorder = PacketRecorder("/tmp/test_session.claudertos_session")
+recorder.start()
+recorder.record(snap_dict)
+recorder.stop()
+
+# 재생
+replayer = SessionReplayer("/tmp/test_session.claudertos_session")
+engine   = AnalysisEngine(ai_mode='offline')
+result   = replayer.replay_full(engine)
+assert result.snapshots == 1
+assert result.total_issues >= 0
+print("Replay: ✅")
+```
+
+### 6. Fault Injection
+
+```bash
+python3 tests/fault_injection_tester.py /dev/ttyUSB0
+
+# 시나리오:
+# a) 힙 고갈 (malloc 반복 → pvPortMalloc_Failed 콜백)
+# b) 스택 오버플로우 (configCHECK_FOR_STACK_OVERFLOW=2)
+# c) HardFault 유도 (NULL 포인터 역참조)
+# d) Watchdog 타임아웃 (MainTask 지연)
+```
+
+**Fault Injection 상세 조건:**
+
+| 시나리오 | 유도 방법 | 기대 감지 | 허용 감지 시간 |
+|----------|---------|---------|-------------|
+| 힙 고갈 | malloc(4096) 반복, heap_total=8192B | heap_exhaustion Critical | < 3s |
+| 스택 오버플로우 | 재귀 호출 깊이 증가 | stack_overflow_imminent | < 2s |
+| HardFault | *(volatile uint32_t*)0 = 0 | hard_fault Critical | 즉시 |
+| 우선순위 역전 | LowTask mutex 보유 + HighTask 대기 | priority_inversion High | < 5s |
+| 데드락 | 순환 mutex 획득 | RG-001 Critical | < 10s |
 
 ---
 
-## Known Limitations
+## Semantic Cache 검증
 
-1. **ITM Bandwidth:** Limited to ~10 KB/s on ST-Link (J-Link: ~50 KB/s)
-2. **Buffer Size:** 64 KB ring buffer (configurable)
-3. **Task Limit:** 16 tasks maximum (configurable)
-4. **Timestamp Rollover:** 23.8 seconds (handled automatically)
+```python
+from ai.response_cache import AIResponseCache, SemanticKeyBuilder
+import tempfile, pathlib
+
+tmp    = pathlib.Path(tempfile.mkdtemp()) / 'test.json'
+cache  = AIResponseCache(cache_file=tmp)
+kb     = SemanticKeyBuilder()
+
+# hwm=14와 hwm=15는 같은 버킷 ("danger")
+issue_14 = {'type':'stack_overflow_imminent','severity':'Critical',
+             'affected_tasks':['T'],'detail':{'stack_hwm_words':14}}
+issue_15 = {'type':'stack_overflow_imminent','severity':'Critical',
+             'affected_tasks':['T'],'detail':{'stack_hwm_words':15}}
+issue_45 = {'type':'stack_overflow_imminent','severity':'Critical',
+             'affected_tasks':['T'],'detail':{'stack_hwm_words':45}}
+
+k14,_ = kb.build(issue_14); k15,_ = kb.build(issue_15); k45,_ = kb.build(issue_45)
+assert k14 == k15, "14와 15는 같은 버킷이어야 함"
+assert k14 != k45, "14와 45는 다른 버킷이어야 함"
+
+cache.put(issue_14, None, "response", {}, cost_usd=0.0085)
+assert cache.get(issue_15, None) is not None  # 캐시 히트
+assert cache.get(issue_45, None) is None       # 캐시 미스
+print("Semantic Cache: ✅")
+```
 
 ---
 
-## Support Matrix
+## 재현성 확인 체크리스트
 
-| Feature | STM32F4 | STM32F7 | STM32H7 |
-|---------|---------|---------|---------|
-| DWT Timestamp | ✅ | ✅ | ✅ |
-| ITM/SWO | ✅ | ✅ | ✅ |
-| CRC32 Hardware | ❌ | ✅ | ✅ |
-| Cache | ❌ | ✅ | ✅ |
+```bash
+# 1. Python 버전
+python3 --version   # 3.11.x
 
----
+# 2. 패키지 버전
+pip show anthropic | grep Version   # 0.40.0+
 
-**Last Updated:** 2026-03-13  
-**Maintained by:** Guntae Park
+# 3. 프로토콜 검증
+python3 examples/integrated_demo.py --validate
+# → 20/20 PASS
+
+# 4. 전 과정 시뮬레이션 (하드웨어 불필요)
+python3 -c "
+import sys; sys.path.insert(0,'host')
+from analysis.analyzer import AnalysisEngine
+from analysis.resource_graph import ResourceGraph
+engine = AnalysisEngine(ai_mode='offline')
+rg = ResourceGraph()
+print('환경 OK: analyzer + resource_graph import 성공')
+"
+
+# 5. Docker (선택)
+docker-compose run --rm claudertos --validate
+```

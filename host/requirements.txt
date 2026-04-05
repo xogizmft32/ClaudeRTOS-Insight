@@ -1,25 +1,26 @@
-# ClaudeRTOS-Insight V3.1 Host Requirements
+# ClaudeRTOS-Insight Host Requirements
+# Python: 3.11+ (see .python-version)
+# Install: pip install -r requirements.txt
 
-# Anthropic Claude API (use latest)
-anthropic>=0.40.0
+# ── AI Providers (필요한 것만 설치) ──────────────────────────
+anthropic>=0.40.0          # Claude (기본)
+# openai>=1.0.0            # GPT-4o
+# google-generativeai>=0.5 # Gemini
 
-# Serial communication (UART fallback)
-pyserial>=3.5
+# ── 통신 ─────────────────────────────────────────────────────
+pyserial>=3.5              # UART fallback
 
-# J-Link SWO interface (optional – required for --source jlink)
-pylink-square>=1.2.0
+# ── J-Link SWO (선택, --port jlink 사용 시) ──────────────────
+# pylink-square>=1.2.0
 
-# Numerical analysis (trend detection)
-numpy>=1.24.0
+# ── 수치 분석 ────────────────────────────────────────────────
+numpy>=1.24.0              # trend detection
 
-# Testing
+# ── 테스트 ────────────────────────────────────────────────────
 pytest>=7.4.0
 
-# Install:
-#   pip install -r requirements.txt
+# ── 최소 설치 (UART + Anthropic만) ───────────────────────────
+# pip install anthropic pyserial numpy
 #
-# J-Link only:
-#   pip install pylink-square
-#
-# Minimum (UART mode only):
-#   pip install anthropic pyserial numpy
+# Ollama (로컬, $0): ollama serve && ollama pull qwen2.5:3b
+# Docker:  docker-compose run --rm claudertos --validate

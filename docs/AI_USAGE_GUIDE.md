@@ -173,3 +173,49 @@ if ai_issues and last_snap:
 | No network / air-gapped | `ollama` provider |
 | Zero budget | `ollama` + `postmortem` |
 | **Real-time control loop** | **No AI mode** |
+
+---
+
+## AI Response Cache
+
+The cache uses **semantic bucketing** — similar issues share the same cache key:
+
+```
+stack_hwm=14W → bucket: "danger"  ─┐ Same key
+stack_hwm=15W → bucket: "danger"  ─┘ → 1 AI call
+stack_hwm=45W → bucket: "warning"    → separate key → new AI call
+```
+
+```python
+from ai.response_cache import AIResponseCache
+cache = AIResponseCache()   # loads from ~/.claudertos_cache/
+
+hit = cache.get(issue, snap)         # check before calling AI
+if not hit:
+    resp = debugger.debug_snapshot(...)
+cache.put(issue, snap, text, dict, cost_usd=0.0085)
+cache.save()                         # persist across sessions
+print(cache.stats()['hit_rate_pct']) # e.g. "68.0%"
+```
+
+TTL: Critical=1h (fast invalidation), others=24h.
+
+---
+
+## TokenOptimizer
+
+Compresses AI context to fit within `token_budget`:
+
+| Field removed | Reason |
+|---------------|--------|
+| `runtime_us` | AI doesn't use per-task cycle counts for diagnosis |
+| Old timeline events | Keep Critical events first, sample the rest |
+
+```python
+from local_analyzer.token_optimizer import TokenOptimizer
+opt = TokenOptimizer(token_budget=150)
+snap_opt, issues_opt, tl_opt, tokens = opt.optimize(snap, issues, timeline)
+# tokens: actual estimated token count
+```
+
+Budget guide: 100=simple, 150=normal (default), 300=fault, 500=full trace.
