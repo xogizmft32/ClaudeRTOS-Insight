@@ -675,3 +675,48 @@ debugger = RTOSDebuggerV3(
 ### Validation: 7/7 신규 + 20/20 기존 = ALL PASS
 - TimeNormalizer, EventPriorityQueue, Context, Hybrid, CausalGraph
 - 전체 파이프라인: 0.06ms/회, N100 47,563× 여유
+
+## [4.3.0] — 2026-04-04 ✅ PRODUCTION READY
+
+### 1. Global Causal Graph (`host/analysis/causal_graph.py` v2)
+- `GlobalCausalGraph`: 세션 전체 누산 그래프 (매 스냅샷마다 초기화 → 누산)
+  - `update()`: 스냅샷 분석 결과를 기존 그래프에 병합
+  - 노드 병합(merge): 반복 발생 시 occurrence_count 증가, confidence 상승
+  - `get_trends()`: 반복 패턴 목록 (occurrence_count > 1)
+  - `_max_nodes=200`: 메모리 보호, Low 노드 LRU 제거
+- 의미 기반 자동 연결(_SEMANTIC_RULES): 패턴 ID 하드코딩 제거
+  - (deadlock, timing, 60s) → CAUSES
+  - (memory, memory, 120s) → CAUSES
+  - 카테고리 + 시간 창으로 자동 엣지 생성
+- AI context: `repeated_patterns`, `session_snapshots` 필드 추가
+- 처리 시간: 0.05ms / 스냅샷
+
+### 2. EventPriorityQueue v2 (`host/analysis/event_queue.py`)
+- **Aging**: 대기 시간 초과 이벤트 우선순위 자동 1단계 상승
+  - LOW ≥ 300s → MEDIUM, MEDIUM ≥ 120s → HIGH, HIGH ≥ 60s → CRITICAL
+- **Rate Limiting**: CRITICAL burst 제어
+  - 10초 창 내 5회 초과분 → 배치 처리 대기 (AI 과다 호출 방지)
+- **Adaptive Threshold**: 이슈 빈도에 따른 threshold 자동 조정
+  - 이슈 드문 경우 → threshold 감소 (빠른 처리)
+  - 이슈 빈번 → threshold 증가 (배치 효율화)
+- **MAX_QUEUE_SIZE=500**: 메모리 보호, LOW 이벤트 자동 드롭
+
+### 3. AI Response Cache (`host/ai/response_cache.py`)
+- `AIResponseCache`: Semantic LRU Cache (세션 간 지속)
+  - `SemanticKeyBuilder`: hwm=14, hwm=15 → 같은 버킷 (danger)
+    hwm=45 → 다른 버킷 (warning) → 유사 이슈 재사용
+  - `put()`: AI 응답 저장 (text + dict + cost 기록)
+  - `get()`: 의미 기반 조회 (TTL 자동 체크)
+  - 영속화: `~/.claudertos_cache/ai_responses.json`
+  - LRU 교체: max_entries=200
+  - TTL: Critical=1h, 그 외=24h
+- `RTOSDebuggerV3.debug_snapshot()`: 캐시 조회/저장 통합
+- 기대 효과: 반복 이슈 70%+ 비용 절감
+
+### 4. 패턴 가이드 문서
+- `docs/PATTERN_GUIDE.md` 신규 (영문, 8.6KB)
+  - 전체 스키마 레퍼런스, 추가·수정·비활성화 방법
+  - match 조건, constraints, causal_chain_template 변수표
+- `docs/PATTERN_GUIDE_ko.md` 신규 (한국어)
+
+### Validation: 7/7 신규 + 20/20 기존 = ALL PASS

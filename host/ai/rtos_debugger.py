@@ -35,6 +35,7 @@ from analysis.debugger_context import (
     context_token_estimate,
 )
 from .providers import create_provider, AIProvider, AITier, AIResponse
+from .response_cache import AIResponseCache
 from .providers.base import AITier
 
 
@@ -166,6 +167,7 @@ class RTOSDebuggerV3:
             self._provider = ai_provider
         else:
             self._provider = create_provider(provider, **provider_kwargs)
+        self._cache = AIResponseCache()
 
     @property
     def provider(self) -> AIProvider:
@@ -175,6 +177,10 @@ class RTOSDebuggerV3:
     @property
     def provider_name(self) -> str:
         return self._provider.name
+
+    @property
+    def cache(self) -> AIResponseCache:
+        return self._cache
 
     # ── 핵심 메서드 ──────────────────────────────────────────
 
@@ -201,7 +207,27 @@ class RTOSDebuggerV3:
             isr_stats=isr_stats, cpu_hz=cpu_hz,
         )
 
+        # 캐시 조회
+        if issues:
+            cached = self._cache.get(issues[0], snap)
+            if cached:
+                return {**cached.response_dict,
+                        '_cache_hit': True, '_cost_saved': cached.cost_saved}
+
         resp = self._provider.generate(system, ctx_json, max_tok, tier)
+
+        # 캐시 저장
+        if issues:
+            severity = max((i.get('severity','Low') for i in issues),
+                           key=lambda s: {'Critical':0,'High':1,'Medium':2,'Low':3}.get(s,3),
+                           default='High')
+            self._cache.put(
+                issues[0], snap,
+                response_text=resp.text,
+                response_dict=resp.to_dict(),
+                cost_usd=resp.cost_usd,
+                severity=severity,
+            )
         return resp.to_dict()
 
     def analyze_fault(self,
