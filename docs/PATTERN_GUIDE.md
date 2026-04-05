@@ -1,4 +1,4 @@
-# Pattern Guide — ClaudeRTOS-Insight V4.2
+# Pattern Guide — ClaudeRTOS-Insight
 
 Pattern DB를 사용하면 AI 호출 없이 알려진 RTOS 장애를 즉시 진단할 수 있습니다.  
 이 가이드는 패턴 조회·추가·수정·비활성화 방법을 설명합니다.
@@ -295,5 +295,5 @@ for m in matches:
 
 ---
 
-**버전:** V4.2.0 | **파일:** `host/patterns/`  
+**버전:**  | **파일:** `host/patterns/`  
 **자동 학습:** `SessionLearner` — confidence ≥ 0.80, 2회 이상 발생 시 자동 저장

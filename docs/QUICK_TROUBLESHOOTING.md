@@ -1,11 +1,11 @@
-# Quick Troubleshooting — ClaudeRTOS-Insight V4.2.0
+# Quick Troubleshooting — ClaudeRTOS-Insight
 
 ---
 
 ## 1. 링커 오류: `undefined reference to EventClassifier_ClassifyV3`
 
 **원인:** 구 버전 `event_classifier.c` 사용.  
-**해결:** V4.2.0의 `event_classifier.c`를 `claudertos/` 폴더에 복사하거나 `python3 install.py --project .` 재실행.
+**해결:** .0의 `event_classifier.c`를 `claudertos/` 폴더에 복사하거나 `python3 install.py --project .` 재실행.
 
 ---
 
@@ -28,7 +28,7 @@
 **확인 순서:**
 ```
 1. JLinkSWOViewer → Device: STM32F446RE, Speed: 2250000
-2. 보드 리셋 후 "ClaudeRTOS-Insight V4.2.0.0 Started [ITM]" 확인
+2. 보드 리셋 후 "ClaudeRTOS-Insight .0 Started [ITM]" 확인
 3. main.c에서 Transport_Init(180000000U) 호출 확인
 ```
 자세한 내용: `docs/ITM_TROUBLESHOOTING.md`

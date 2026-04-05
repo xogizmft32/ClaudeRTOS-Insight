@@ -1,7 +1,6 @@
 # Priority Buffer Analysis
 ## V1 vs V2 - Critical Event Protection Comparison
 
-**Version:** 4.2.0  
 **Date:** 2026-04-03  
 **Critical Finding:** V1 has fundamental flaw in critical event protection
 
@@ -346,7 +345,7 @@ Total = Reserved / 0.2 = 25,600 bytes (25 KB total buffer)
 **Step 1: Replace Header**
 ```c
 // Old
-#include "priority_buffer_v4.h"  // V4 (V3.1+)
+#include "priority_buffer_v4.h"  // V4 (+)
 
 // New
 #include "priority_buffer_v2.h"

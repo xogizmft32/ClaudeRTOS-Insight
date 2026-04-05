@@ -1,5 +1,5 @@
 # Testing Guide
-## ClaudeRTOS-Insight V4.2.0
+## ClaudeRTOS-Insight
 
 **Complete testing procedures for SIL4 validation**
 
@@ -157,7 +157,7 @@ python examples/integrated_demo.py --source openocd --duration 60
 
 **Expected Output:**
 ```
-ClaudeRTOS-Insight V4.2.0 Integration Demo
+ClaudeRTOS-Insight  Integration Demo
 =========================================
 
 [1/6] Connecting to J-Link...
@@ -329,4 +329,3 @@ Store in `certification/` directory.
 ---
 
 **Last Updated:** 2026-03-13  
-**Version:** 4.2.0

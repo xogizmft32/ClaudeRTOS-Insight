@@ -720,3 +720,20 @@ debugger = RTOSDebuggerV3(
 - `docs/PATTERN_GUIDE_ko.md` 신규 (한국어)
 
 ### Validation: 7/7 신규 + 20/20 기존 = ALL PASS
+
+## [4.3.1] — 2026-04-04 ✅ PRODUCTION READY
+
+### 문서 버전 표기 전면 제거
+- CHANGELOG.md 제외 모든 문서에서 버전 번호 제거
+  - 제목 줄, **Version:** 태그, footer 버전 표기 일괄 제거
+  - 18개 문서 수정 완료
+  - 외부 툴 버전(FreeRTOS v10.x, J-Link v7.88 등)은 유지
+
+### 전 과정 시뮬레이션 검증 (19/19 PASS)
+- PHASE 1: 설치 검증 (install.py CORE_FILES, FreeRTOSConfig 패치)
+- PHASE 2: 펌웨어 Binary Protocol V4 패킷 생성 (132B, 3 tasks)
+- PHASE 3: ITM SWO 수신 + 파싱 + TimeNormalizer CYCCNT→µs
+- PHASE 4: 분석 파이프라인 전체 (Rule+Corr+SM+RG+Orch+CausalGraph+Queue) 1.08ms
+- PHASE 5: AI 컨텍스트 구성 (events/resources/candidates, ~111 tokens)
+- PHASE 6: AI 응답 파싱 + Semantic Cache 저장/재조회/영속화
+- PHASE 7: 기존 프로토콜 검증 20/20 PASS 유지

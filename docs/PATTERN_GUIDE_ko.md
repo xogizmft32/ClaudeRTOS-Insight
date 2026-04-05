@@ -1,4 +1,4 @@
-# 패턴 가이드 (한국어) — ClaudeRTOS-Insight V4.2
+# 패턴 가이드 (한국어) — ClaudeRTOS-Insight
 
 > 영문 버전: `docs/PATTERN_GUIDE.md`
 
@@ -152,4 +152,4 @@ for m in matches:
 
 ---
 
-**버전:** V4.2.0 | 영문 전체 가이드: `docs/PATTERN_GUIDE.md`
+**버전:**  | 영문 전체 가이드: `docs/PATTERN_GUIDE.md`

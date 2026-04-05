@@ -1,7 +1,6 @@
 # Fault Injection Testing Guide
 ## Automated Error Handling Verification
 
-**Version:** 4.2.0  
 **Purpose:** Verify system behavior under fault conditions
 
 ---
@@ -25,7 +24,7 @@ The Fault Injection framework enables automated testing of error handling capabi
 
 ```c
 #include "fault_injection.h"
-#include "priority_buffer_v4.h"  // V4 (V3.2+)
+#include "priority_buffer_v4.h"  // V4 (+)
 
 void run_fault_tests(void) {
     // Initialize framework
@@ -538,5 +537,4 @@ Fault injection testing provides confidence that:
 
 ---
 
-**Version:** 4.2.0  
 **Last Updated:** 2026-03-19

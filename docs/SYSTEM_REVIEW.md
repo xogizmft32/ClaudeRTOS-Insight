@@ -1,4 +1,4 @@
-# System Architecture Review — ClaudeRTOS-Insight V4.2.0
+# System Architecture Review — ClaudeRTOS-Insight
 
 ## Analysis Pipeline
 
@@ -133,7 +133,7 @@ saved = learner.save_to_db(auto_save=True)
 
 ---
 
-## V4.2.0 추가 컴포넌트
+##  추가 컴포넌트
 
 ### ② TimeNormalizer (`host/analysis/time_normalizer.py`)
 
@@ -193,7 +193,7 @@ ingest 소스:
   rule_issues        → rule_* 이슈 노드
 ```
 
-### V4.2.0 검증 결과
+###  검증 결과
 
 ```
 ② TimeNormalizer:   cycles(180M) → 1,000,000µs ✅ wrap-around 보정 ✅

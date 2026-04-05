@@ -1,7 +1,6 @@
 # Test Environment Specification
-## ClaudeRTOS-Insight V4.2.0
+## ClaudeRTOS-Insight
 
-**Version:** 2.0.0  
 **Date:** 2026-03-13
 
 ---

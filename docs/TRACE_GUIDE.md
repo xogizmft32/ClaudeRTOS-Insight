@@ -4,7 +4,7 @@
 
 ## Overview
 
-ClaudeRTOS V4.2 provides **zero-overhead ISR frequency tracking** via DWT hardware
+ClaudeRTOS provides **zero-overhead ISR frequency tracking** via DWT hardware
 counters plus **low-overhead software tracing** for task switches and mutexes.
 
 | Method | Overhead | What you get |

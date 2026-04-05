@@ -1,4 +1,4 @@
-# ClaudeRTOS-Insight V4.2.0 — Quick Start Guide
+# ClaudeRTOS-Insight — Quick Start Guide
 
 **Goal:** Install → Build → Flash → Connect Host → AI Debug  
 **Time:** ~20 minutes  
@@ -27,7 +27,7 @@ pip3 install anthropic   # or: openai / google-generativeai
 ## Step 1: Extract & Install
 
 ```bash
-tar -xzf ClaudeRTOS-Insight-v4.2.0-FINAL.tar.gz
+tar -xzf ClaudeRTOS-Insight--FINAL.tar.gz
 cd ClaudeRTOS-Insight-v2.5.0   # extracted directory name
 
 # Auto-integrate into your project
@@ -92,7 +92,7 @@ make flash-stlink   # ST-Link (Nucleo built-in)
 
 Expected output (SWO or serial):
 ```
-ClaudeRTOS-Insight V4.2.0 Started [ITM]
+ClaudeRTOS-Insight  Started [ITM]
 ```
 
 ---
@@ -185,6 +185,6 @@ A: `TimeNormalizer` converts DWT CYCCNT (cycles), RTOS tick (uptime_ms), and pac
 
 ---
 
-**Version:** 4.2.0 | **Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+  
+**Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+  
 **Validation:** 20/20 PASS | **Protocol:** Binary V4 (field-based, V3 compatible)  
 **Started with:** Vibe Coding × Claude
