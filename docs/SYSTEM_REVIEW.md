@@ -220,3 +220,78 @@ AI 컨텍스트 전달:
 | Cache Invalidation | TTL 고정 | 펌웨어 재플래시 감지 → 자동 무효화 |
 | Docker | 없음 | Dockerfile + docker-compose.yml 제공 |
 | 테스트 | 20 checks | 경계값/race condition 시나리오 추가 |
+
+---
+
+##  추가 컴포넌트
+
+### AlertManager (`host/analysis/alert_manager.py`)
+Critical 이벤트를 다중 채널로 전달하는 알림 관리자.
+
+```python
+from analysis.alert_manager import AlertManager
+from analysis.event_queue import EventPriorityQueue
+
+alert = AlertManager(
+    webhook_url="https://hooks.slack.com/services/...",  # 선택
+    log_file="alerts.log",                               # 선택
+    min_severity='Critical',
+)
+q = EventPriorityQueue(on_critical=alert.on_critical)
+# CRITICAL 이벤트 발생 → 터미널 + 파일 + 웹훅 자동 전송
+```
+
+### OS 격리 (`firmware/port/insight_port_os.h`)
+FreeRTOS API를 os_monitor에서 격리. RTOS 교체 시 이 파일만 수정.
+
+```
+firmware/port/insight_port_os.h              ← OS 추상화 인터페이스
+firmware/port/freertos/insight_port_os.c     ← FreeRTOS 구현
+# firmware/port/threadx/insight_port_os.c   ← (향후 추가 가능)
+```
+
+제공 함수: `InsightOS_GetTaskList()`, `InsightOS_GetHeapInfo()`, `InsightOS_GetCpuPercent()` 등
+
+### ISR 타임라인 분리 (`time_normalizer.split_timelines()`)
+
+```python
+split = tn.split_timelines(events)
+# split['task']:      ctx_switch, mutex 등
+# split['isr']:       isr_enter / isr_exit (task_id=0xFF)
+# split['scheduler']: ctx_switch_in/out
+```
+
+### Mermaid 그래프 출력 (`causal_graph.to_mermaid()`)
+
+```python
+md = gcg.to_mermaid(max_nodes=15)
+with open("causal_graph.mermaid", "w") as f:
+    f.write(md)
+# → GitHub / VS Code / Notion에서 자동 렌더링
+```
+
+### 로컬 AI 벤치마크 (`docs/LOCAL_AI_GUIDE.md`)
+Ollama 모델별 특성, 클라우드 대비 한계, 운영 전략 포함.
+
+### Session Learner 자동 통합 (`RTOSDebuggerV3.save_session()`)
+
+```python
+# 세션 종료 시 1회 호출
+n = debugger.save_session(auto_save=True)
+# → ~/.claudertos_cache/ai_responses.json (캐시)
+# → host/patterns/custom_patterns.json (학습된 패턴)
+print(f"{n}개 패턴 학습됨")
+```
+
+### Peripheral Fault Injection (v2)
+
+```c
+// 신규 FaultType
+FAULT_UART_PARITY_ERROR, FAULT_UART_FRAME_ERROR,
+FAULT_I2C_TIMEOUT,       FAULT_I2C_NACK,
+FAULT_SPI_OVERRUN,       FAULT_DMA_TRANSFER_ERROR,
+FAULT_ADC_OVERRUN,       FAULT_TIMER_OVERFLOW,
+
+// 전체 주변장치 테스트
+uint32_t n = FaultInjection_RunPeripheralTests(results);
+```

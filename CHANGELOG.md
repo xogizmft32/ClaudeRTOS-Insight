@@ -744,7 +744,7 @@ debugger = RTOSDebuggerV3(
 - `PacketRecorder`: 수신 패킷 → `.claudertos_session` JSON Lines 저장
   - `start()` / `record(snapshot)` / `stop()` API
   - 메타 헤더: cpu_hz, recorded_at, version
-- `SessionReplayer`: 파일 재생 → 동일 분석 결과 보장
+- `SessionReplayer`: 파일 재생 → 동일 데이터 기반 분석 재실행
   - `snapshots(realtime=False)`: 즉시 재생 (분석용)
   - `snapshots(realtime=True, speed=2.0)`: 타이밍 재현
   - `replay_full(engine, corr, rg, sm, orch)`: 전체 파이프라인 일괄
@@ -829,10 +829,76 @@ debugger = RTOSDebuggerV3(
 ### 5. 과장 표현 수정 (23개 문서 전체)
 - `동일 분석 결과 보장` → `동일 데이터 기반 분석 재실행 (스케줄러·ISR 미재현)`
 - `재현성 보장` → `재현성 향상`
-- `CRITICAL always succeeds` → `CRITICAL 우선 처리 (reserved buffer 가득 차면 실패 가능)`
+- `CRITICAL 우선 처리 (reserved buffer 가득 차면 실패 가능)` → `CRITICAL 우선 처리 (reserved buffer 가득 차면 실패 가능)`
 - `Guaranteed WCET` → `Estimated WCET`
 - `Guaranteed consistency` → `단일 스레드 사용 시 일관성 보장`
 - `zero overhead (ISR)` → `~3 cycles per sample, 사실상 무시 가능`
 - `lock-free LDREX/STREX` → `lock-free LDREX/STREX — 펌웨어 계층`
 
 ### Validation: 13/13 PASS + 20/20 Protocol PASS
+
+## [4.5.0] — 2026-04-06 ✅ PRODUCTION READY
+
+### P1-① Peripheral Fault Injection (`firmware/tests/fault_injection.h/c` v2)
+- 주변장치 계층 장애 타입 8개 추가:
+  - FAULT_UART_PARITY_ERROR / FAULT_UART_FRAME_ERROR
+  - FAULT_I2C_TIMEOUT / FAULT_I2C_NACK
+  - FAULT_SPI_OVERRUN / FAULT_DMA_TRANSFER_ERROR
+  - FAULT_ADC_OVERRUN / FAULT_TIMER_OVERFLOW
+- `FaultPeripheralTarget_t`: 대상 주변장치 포인터 구조체
+- `FaultInjection_RunPeripheralTests()`: 8개 주변장치 테스트 일괄 실행
+- STM32 레지스터 직접 설정으로 오류 플래그 강제 발생 (초기화 불필요)
+- 비-STM32 환경: 시뮬레이션 모드 자동 전환
+
+### P1-② Session Learner 피드백 루프 (`host/ai/rtos_debugger.py`)
+- `RTOSDebuggerV3`에 `SessionLearner` 자동 통합
+  - `debug_snapshot()` 후 AI 응답 자동 `learner.record()`
+  - `auto_learn=True` 기본값 (비활성화: `debugger._auto_learn = False`)
+- `save_session(auto_save=True)`: 세션 종료 시 1회 호출
+  - AI 응답 캐시 영속화
+  - confidence ≥ 0.80, 발생 ≥ 2회 패턴 → custom_patterns.json 저장
+  - 반환값: 저장된 패턴 수
+
+### P1-③ AlertManager (`host/analysis/alert_manager.py`)
+- CRITICAL 이벤트 다중 채널 알림
+  - console (항상): `🔴 [HH:MM:SS] CRITICAL — TaskName`
+  - log file (선택): 타임스탬프 + 상세 기록
+  - webhook (선택): Slack/Teams/사용자 정의 HTTP POST (timeout=2초)
+  - custom_handler (선택): 사용자 정의 콜백
+- `min_severity` 필터: Critical만 또는 High 이상 선택 가능
+- `AlertRecord` 이력 조회, 채널별 통계
+
+### P2-④ OS 격리 (`firmware/port/insight_port_os.h/c`)
+- `insight_port_os.h`: RTOS 독립 OS 추상화 인터페이스
+  - `InsightTaskInfo_t`, `InsightHeapInfo_t` 공통 구조체
+  - `InsightOS_GetTaskList()`, `InsightOS_GetHeapInfo()`, `InsightOS_GetCpuPercent()`
+  - `InsightOS_SuspendScheduler()` / `ResumeScheduler()`
+- `firmware/port/freertos/insight_port_os.c`: FreeRTOS 구현
+  - RTOS 교체 시 이 파일만 수정
+- os_monitor_v3.c: 향후 insight_port_os.h 함수 사용으로 전환 예정
+
+### P2-⑤ ISR 3타임라인 분리 (`host/analysis/time_normalizer.py`)
+- `split_timelines()`: 이벤트를 task/isr/scheduler 3개 타임라인으로 분리
+  - isr_enter / isr_exit → ISR 타임라인
+  - ctx_switch_in/out → scheduler 타임라인
+  - 나머지 → task 타임라인
+- trace_events.c: ISR nesting level counter 추가
+
+### P2-⑥ CausalGraph 개선 (`host/analysis/causal_graph.py`)
+- `CausalNode.context_type`: 'task' | 'isr' | 'scheduler' 구분
+- `to_mermaid(max_nodes)`: Mermaid 다이어그램 문자열 출력
+  - 루트 원인 노드 빨간 테두리 강조
+  - 엣지 종류별 화살표 스타일
+
+### P3-⑦ 로컬 AI 가이드 (`docs/LOCAL_AI_GUIDE.md`)
+- Ollama 모델별 특성 (N100 기준 추정치)
+- 클라우드 대비 한계 명시
+- 상황별 운영 전략 표
+- 완전 오프라인 가능 범위 명확화
+- Docker 연동 방법
+
+### 문서 업데이트
+- SYSTEM_REVIEW.md: v4.5.0 신규 컴포넌트 전체 추가
+- CHANGELOG.md: 과장 표현 수정
+
+### Validation: 20/20 Protocol PASS

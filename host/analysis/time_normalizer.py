@@ -172,6 +172,44 @@ class TimeNormalizer:
     def reference(self) -> Optional[TimeRef]:
         return self._ref
 
+
+    def split_timelines(self, events: List[Dict]) -> Dict[str, List[Dict]]:
+        """
+        통합 이벤트 리스트를 컨텍스트별로 분리한다.
+
+        Returns
+        -------
+        {
+          'task':      [...],  # ctx_switch_in/out, mutex_take/give 등
+          'isr':       [...],  # isr_enter / isr_exit
+          'scheduler': [...],  # tick, context_switch (스케줄러 판단 이벤트)
+        }
+
+        주의:
+          task_id=0xFF인 이벤트가 ISR 컨텍스트.
+          isr_enter / isr_exit 이벤트는 명시적으로 ISR 타임라인.
+          나머지는 TASK 타임라인.
+        """
+        isr_types       = {'isr_enter', 'isr_exit'}
+        scheduler_types = {'ctx_switch_in', 'ctx_switch_out'}
+
+        result: Dict[str, List[Dict]] = {
+            'task': [], 'isr': [], 'scheduler': []}
+
+        for ev in events:
+            etype = ev.get('type', '')
+            tid   = ev.get('task_id', 0)
+
+            if etype in isr_types or tid == 0xFF:
+                result['isr'].append(ev)
+            elif etype in scheduler_types:
+                result['scheduler'].append(ev)
+                result['task'].append(ev)   # 태스크 관점에도 포함
+            else:
+                result['task'].append(ev)
+
+        return result
+
     def summary(self) -> Dict:
         return {
             'cpu_hz':     self._cpu_hz,

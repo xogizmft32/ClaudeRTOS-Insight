@@ -36,6 +36,7 @@ from analysis.debugger_context import (
 )
 from .providers import create_provider, AIProvider, AITier, AIResponse
 from .response_cache import AIResponseCache
+from patterns.session_learner import SessionLearner
 from .providers.base import AITier
 
 
@@ -167,7 +168,12 @@ class RTOSDebuggerV3:
             self._provider = ai_provider
         else:
             self._provider = create_provider(provider, **provider_kwargs)
-        self._cache = AIResponseCache()
+        self._cache   = AIResponseCache()
+        self._learner = SessionLearner(
+            confidence_threshold=0.80,
+            min_occurrences=2,
+        )
+        self._auto_learn = True   # 기본: 자동 학습 활성화
 
     @property
     def provider(self) -> AIProvider:
@@ -181,6 +187,11 @@ class RTOSDebuggerV3:
     @property
     def cache(self) -> AIResponseCache:
         return self._cache
+
+    @property
+    def learner(self) -> SessionLearner:
+        """세션 패턴 학습기."""
+        return self._learner
 
     # ── 핵심 메서드 ──────────────────────────────────────────
 
@@ -228,6 +239,14 @@ class RTOSDebuggerV3:
                 cost_usd=resp.cost_usd,
                 severity=severity,
             )
+            # 세션 학습: ParsedResponse 파싱 후 learner에 기록
+            if self._auto_learn:
+                try:
+                    from .response_parser import AIResponseParser
+                    pr = AIResponseParser().parse(resp.text)
+                    self._learner.record(issues[0], pr)
+                except Exception:
+                    pass   # 학습 실패는 무시
         return resp.to_dict()
 
     def analyze_fault(self,
@@ -268,6 +287,19 @@ class RTOSDebuggerV3:
         )
         resp = self._provider.generate(system, ctx_json, max_tok, tier)
         return resp.to_dict()
+
+    def save_session(self, auto_save: bool = True) -> int:
+        """
+        세션 종료 시 호출:
+          1) AI 응답 캐시 영속화
+          2) 학습된 패턴 custom_patterns.json 저장
+
+        Returns: 저장된 학습 패턴 수
+        """
+        self._cache.save()
+        candidates = self._learner.get_candidates()
+        saved = self._learner.save_to_db(auto_save=auto_save)
+        return len(saved)
 
     def quick_health_check(self, snap: Dict) -> Dict:
         """Tier3 최소 비용 헬스체크."""

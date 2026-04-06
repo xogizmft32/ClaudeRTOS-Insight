@@ -73,6 +73,8 @@ class CausalNode:
             d['occurrences'] = self.occurrence_count
         if self.timestamp_us:
             d['timestamp_us'] = self.timestamp_us
+        if self.context_type != 'task':
+            d['context_type'] = self.context_type
         return d
 
 
@@ -309,6 +311,71 @@ class CausalGraph:
             'node_count':   len(self._nodes),
             'edge_count':   len(self._edges),
         }
+
+
+    def to_mermaid(self, max_nodes: int = 20) -> str:
+        """
+        Mermaid 다이어그램 문자열 반환.
+
+        사용:
+            md = gcg.to_mermaid()
+            with open("causal_graph.mermaid", "w") as f:
+                f.write(md)
+            # GitHub / Notion / VS Code에서 렌더링
+
+        출력 예:
+            ```mermaid
+            graph TD
+                RG-001["🔴 Deadlock cycle<br/>conf=0.95"]
+                SM-001["🟠 HighTask blocked<br/>conf=0.70"]
+                RG-001 -->|causes| SM-001
+            ```
+        """
+        sev_emoji = {
+            'Critical': '🔴', 'High': '🟠', 'Medium': '🟡', 'Low': '⚪'}
+        top_nodes = sorted(
+            self._nodes.values(),
+            key=lambda n: (_SEV_ORDER.get(n.severity, 3), -n.confidence)
+        )[:max_nodes]
+        top_ids = {n.id for n in top_nodes}
+
+        lines = ["```mermaid", "graph TD"]
+
+        # 노드
+        for n in top_nodes:
+            emoji = sev_emoji.get(n.severity, '⚪')
+            safe_id = n.id.replace('-','_').replace('.','_')
+            label   = n.label[:40].replace('"', "'")
+            occ     = f"<br/>×{n.occurrence_count}" if n.occurrence_count > 1 else ""
+            ctx     = f"<br/>[{n.context_type}]" if n.context_type != 'task' else ""
+            lines.append(
+                f'    {safe_id}["{emoji} {label}<br/>'
+                f'conf={n.confidence:.2f}{occ}{ctx}"]')
+
+        # 엣지
+        edge_labels = {
+            EdgeKind.CAUSES:          '-->|causes|',
+            EdgeKind.CORRELATED_WITH: '-.->|corr|',
+            EdgeKind.PRECEDES:        '-->|precedes|',
+            EdgeKind.AGGRAVATES:      '-->|aggravates|',
+        }
+        for e in self._edges:
+            if e.from_id in top_ids and e.to_id in top_ids:
+                fid = e.from_id.replace('-','_').replace('.','_')
+                tid = e.to_id.replace('-','_').replace('.','_')
+                arrow = edge_labels.get(e.kind, '-->')
+                lines.append(f"    {fid} {arrow} {tid}")
+
+        # 루트 원인 강조 (굵은 테두리)
+        roots = {n.id.replace('-','_').replace('.','_')
+                 for n in self.root_causes()[:3]}
+        if roots:
+            lines.append("    %% Root causes")
+            for r in roots:
+                lines.append(f"    style {r} stroke:#f00,stroke-width:3px")
+
+        lines.append("```")
+        return "\n".join(lines)
 
     @property
     def node_count(self) -> int: return len(self._nodes)
