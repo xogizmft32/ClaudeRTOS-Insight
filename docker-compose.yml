@@ -1,30 +1,139 @@
 # ClaudeRTOS-Insight — Docker Compose
+#
+# 컨테이너 구성:
+#   claudertos-host   : 호스트 분석 프로세스 (항상)
+#   claudertos-ollama : 로컬 AI (CLAUDERTOS_AI_PROVIDER=ollama 시)
+#   claudertos-replay : 세션 재생 (선택)
+#
+# 주의:
+#   펌웨어(STM32)는 실제 하드웨어에서 동작하므로 컨테이너화 불가.
+#   이 Compose는 호스트 분석 소프트웨어만 포함한다.
+#   USB/UART 연결은 호스트 OS에서 관리해야 한다.
+#
 # 사용:
-#   docker-compose run --rm claudertos --validate
-#   docker-compose run --rm claudertos --port uart:/dev/ttyUSB0
+#   docker-compose up claudertos-host          # 기본 분석 (validate)
+#   docker-compose run --rm claudertos-host \  # J-Link (Linux, device 주석 해제)
+#     python3 examples/integrated_demo.py --port jlink
+#   docker-compose up claudertos-ollama        # 로컬 AI 서버
+#   docker-compose run --rm claudertos-replay  # 세션 재생
 
 version: '3.8'
 
+# ── 공통 환경 변수 ─────────────────────────────────────────
+x-env-common: &env-common
+  CLAUDERTOS_AI_PROVIDER: ${CLAUDERTOS_AI_PROVIDER:-anthropic}
+  ANTHROPIC_API_KEY:      ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY:         ${OPENAI_API_KEY:-}
+  GOOGLE_API_KEY:         ${GOOGLE_API_KEY:-}
+  PYTHONPATH:             /app/host
+  PYTHONUNBUFFERED:       "1"
+
+# ── 공통 볼륨 ──────────────────────────────────────────────
+x-volumes-common: &volumes-common
+  - ./host/patterns:/app/host/patterns    # 커스텀 패턴 (호스트 편집 가능)
+  - ./sessions:/app/sessions              # 세션 파일 저장/재생
+  - claudertos-cache:/root/.claudertos_cache  # AI 응답 캐시 (컨테이너 간 공유)
+
 services:
-  claudertos:
-    build: .
+
+  # ── 호스트 분석 프로세스 ────────────────────────────────
+  claudertos-host:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: claudertos-insight:latest
+    container_name: claudertos-host
     environment:
-      # AI Provider 선택 (기본: anthropic)
-      - CLAUDERTOS_AI_PROVIDER=${CLAUDERTOS_AI_PROVIDER:-anthropic}
-      # API 키 (호스트 환경 변수에서 주입)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      <<: *env-common
+      OLLAMA_BASE_URL: http://claudertos-ollama:11434
     volumes:
-      # 세션 파일 저장
-      - ./sessions:/app/sessions
-      # 커스텀 패턴 DB
-      - ./host/patterns:/app/host/patterns
-      # AI 응답 캐시 (세션 간 지속)
-      - ${HOME}/.claudertos_cache:/root/.claudertos_cache
-    # UART 포트 접근 (Linux)
+      <<: *volumes-common
+      # UART 포트 (Linux만, 하드웨어 연결 시 주석 해제)
+      # - /dev/ttyUSB0:/dev/ttyUSB0
+    # J-Link (Linux, udev 설정 필요)
     # devices:
-    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    #   - /dev/bus/usb:/dev/bus/usb
+    depends_on:
+      claudertos-ollama:
+        condition: service_healthy
+        required: false   # ollama 없어도 실행 가능
     command: ["python3", "examples/integrated_demo.py", "--validate"]
+    # 실제 사용:
+    # command: ["python3", "examples/integrated_demo.py", "--port", "uart:/dev/ttyUSB0"]
+
+  # ── 로컬 Ollama AI (선택) ────────────────────────────────
+  # CLAUDERTOS_AI_PROVIDER=ollama 시 사용
+  # docker-compose up claudertos-ollama 로 먼저 시작
+  claudertos-ollama:
+    image: ollama/ollama:latest
+    container_name: claudertos-ollama
+    profiles:
+      - ollama   # docker-compose --profile ollama up 으로만 시작
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── 세션 재생 (선택) ─────────────────────────────────────
+  # docker-compose run --rm claudertos-replay
+  claudertos-replay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: claudertos-insight:latest
+    container_name: claudertos-replay
+    profiles:
+      - replay
+    environment:
+      <<: *env-common
+    volumes:
+      <<: *volumes-common
+    command:
+      - python3
+      - -c
+      - |
+        import sys, os
+        sys.path.insert(0, '/app/host')
+        from replay import SessionReplayer
+        from analysis.analyzer import AnalysisEngine
+
+        session_dir = '/app/sessions'
+        files = [f for f in os.listdir(session_dir)
+                 if f.endswith('.claudertos_session')]
+        if not files:
+            print('세션 파일 없음. /app/sessions/ 에 .claudertos_session 파일을 넣으세요.')
+            sys.exit(1)
+
+        latest = sorted(files)[-1]
+        print(f'재생: {latest}')
+        replayer = SessionReplayer(os.path.join(session_dir, latest))
+        print(replayer.summary())
+        engine = AnalysisEngine(ai_mode='offline')
+        result = replayer.replay_full(engine)
+        print(f'스냅샷: {result.snapshots}, Critical: {result.critical_count}, 데드락: {result.deadlocks}')
+
+volumes:
+  ollama-models:
+  claudertos-cache:
+
+# ── 사용 예시 ─────────────────────────────────────────────
+# 기본 (검증):
+#   docker-compose up claudertos-host
+#
+# Ollama 로컬 AI:
+#   docker-compose --profile ollama up
+#   docker exec claudertos-ollama ollama pull qwen2.5:3b
+#   CLAUDERTOS_AI_PROVIDER=ollama docker-compose up claudertos-host
+#
+# 세션 재생:
+#   cp my_session.claudertos_session sessions/
+#   docker-compose --profile replay run --rm claudertos-replay
+#
+# 펌웨어 (호스트 OS에서 직접):
+#   cd firmware/examples/demo && make flash

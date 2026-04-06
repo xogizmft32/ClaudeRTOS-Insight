@@ -1,6 +1,30 @@
 #!/usr/bin/env python3
 """
-replay.py — Deterministic Session Replay
+replay.py — Session Replay (부분적 재현)
+
+⚠ 이 모듈은 "완전한 Deterministic Replay"가 아닙니다.
+
+완전한 Deterministic Replay 조건과 현재 구현 수준:
+  ✅ 입력 이벤트 기록    : ParsedSnapshot → JSON Lines 저장
+  ⚠  시간 재현          : realtime 모드로 수신 간격 재현 가능하나,
+                           OS 스케줄링 지연으로 정확도 한계 있음
+  ❌ 스케줄러 상태 재현  : FreeRTOS 내부 스케줄러 상태 기록 없음
+  ❌ ISR 진입 순서 보장  : DWT EXCCNT는 횟수만, 순서 미기록
+  ❌ 외부 입력 고정      : UART/버튼 등 외부 이벤트 미포함
+
+실제 제공하는 것:
+  - 수신된 OS 스냅샷 패킷을 파일로 저장
+  - 동일 파일로 동일 분석기를 실행 → 분석 결과 재현
+  - 단, 타임스탬프 의존 분석(시간 창 패턴)은 완전히 동일하지 않을 수 있음
+
+활용 방법:
+  1. 현장 장애 세션 저장 → 나중에 다시 분석
+  2. 팀원과 파일 공유 → 동일 데이터로 분석 토론
+  3. 분석기 코드 변경 후 회귀 테스트 (동일 데이터, 다른 분석기 버전)
+
+완전한 Deterministic Replay가 필요하면:
+  - RTOS trace recorder (e.g., Percepio Tracealyzer, SEGGER SystemView)
+  - 펌웨어 레벨 이벤트 시퀀서와 통합 필요
 
 역할:
   수신된 Binary Protocol 패킷을 파일에 저장하고,

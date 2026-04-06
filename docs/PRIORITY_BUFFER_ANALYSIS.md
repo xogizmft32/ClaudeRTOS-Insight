@@ -134,7 +134,7 @@ V1 Algorithm:
 | **Architecture** | Single ring buffer + priority tracking | Dual buffer (80% normal + 20% reserved) |
 | **Critical Protection** | ❌ **NOT GUARANTEED** | ✅ **GUARANTEED** |
 | **Space Calculation** | ❌ Incorrect for middle drops | ✅ Always correct |
-| **Worst Case** | CRITICAL can fail | CRITICAL always succeeds* |
+| **Worst Case** | CRITICAL can fail | CRITICAL 우선 처리 (reserved buffer가 가득 차면 실패 가능) |
 | **Complexity** | High (packet tracking + compaction) | Low (simple separation) |
 | **WCET** | ~15 µs | ~20 µs |
 | **Memory Overhead** | 266 bytes | 320 bytes |

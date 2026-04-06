@@ -7,7 +7,7 @@
 
 ## 사전 요구사항
 
-### Python 환경 (재현성 보장)
+### Python 환경 (재현성 향상)
 
 ```bash
 # Python 3.11 이상 필요 (.python-version 파일 참조)

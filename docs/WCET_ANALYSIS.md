@@ -56,7 +56,7 @@ With safety margin (1.5×): 56 µs
 - ✅ No dynamic allocation
 - ✅ Fixed execution path
 
-**Guaranteed WCET:** < 60 µs for 512 bytes
+**Estimated WCET:** < 60 µs for 512 bytes
 
 ---
 
@@ -81,7 +81,7 @@ uint64_t DWT_GetTimestamp_us(void)
 
 **With Safety Margin (1.5×):** 203 cycles = 1.13 µs
 
-**Guaranteed WCET:** < 2 µs
+**Estimated WCET:** < 2 µs
 
 **Deterministic Properties:**
 - ✅ Fixed number of operations
@@ -117,7 +117,7 @@ WCET(512 bytes) = 100 + 6656 + 20 = 6776 cycles ≈ 38 µs
 With safety margin (1.5×): 57 µs
 ```
 
-**Guaranteed WCET:** < 60 µs for 512 bytes
+**Estimated WCET:** < 60 µs for 512 bytes
 
 ---
 
@@ -145,7 +145,7 @@ Worst case: Buffer full, Drop Oldest, maximum drop size
 
 **With Safety Margin (1.5×):** 10569 cycles = 59 µs
 
-**Guaranteed WCET:** < 65 µs for 512 bytes
+**Estimated WCET:** < 65 µs for 512 bytes
 
 ---
 
@@ -171,7 +171,7 @@ uint16_t RateController_Adjust(RateController_t *controller,
 
 **With Safety Margin (1.5×):** 195 cycles = 1.08 µs
 
-**Guaranteed WCET:** < 5 µs
+**Estimated WCET:** < 5 µs
 
 **Deterministic Properties:**
 - ✅ No loops
@@ -203,7 +203,7 @@ Worst case: 16 tasks (MAX_TASKS)
 
 **With Safety Margin (1.5×):** 17025 cycles = 95 µs
 
-**Guaranteed WCET:** < 100 µs
+**Estimated WCET:** < 100 µs
 
 ---
 

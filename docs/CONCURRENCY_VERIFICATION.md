@@ -40,7 +40,7 @@ bool PriorityBufferV3_WriteFromISR(...) {
 - ✅ Atomic execution of entire write operation
 - ✅ No task can interrupt during critical section
 - ✅ No ISR can interrupt during critical section
-- ✅ Guaranteed consistency
+- ✅ 단일 스레드 사용 시 일관성 보장
 
 #### **1.2 Atomic Increments**
 
@@ -132,7 +132,7 @@ __asm__ volatile ("" : : : "memory")
 **What this does:**
 - ✅ Prevents compiler from reordering across barrier
 - ✅ Forces compiler to reload volatile variables
-- ✅ No CPU instruction (zero overhead)
+- ✅ 하드웨어 카운터 폴링 (~3 cycles per sample, 사실상 무시 가능)
 
 #### **2.3 Volatile Variables**
 

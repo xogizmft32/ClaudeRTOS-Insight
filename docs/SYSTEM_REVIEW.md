@@ -20,7 +20,7 @@
 
 ```
 STM32 Firmware (Cortex-M4 @ 180MHz)
-  ├─ TraceEvents V2 (lock-free LDREX/STREX)
+  ├─ TraceEvents V2 (lock-free LDREX/STREX — 펌웨어 계층)
   │    traceTASK_SWITCHED_IN/OUT  → ctx_switch 이벤트
   │    traceTAKE/GIVE_MUTEX       → mutex 이벤트
   │    DWT EXCCNT                 → ISR 총 진입 횟수 (hook 없음, 오버헤드 0)
@@ -40,7 +40,7 @@ Host (N100 PC)
   │
   ├─ [4]  replay.py              ★ Deterministic Replay
   │         PacketRecorder: 수신 패킷 → .claudertos_session 파일 저장
-  │         SessionReplayer: 파일 재생 → 동일 분석 결과 보장
+  │         SessionReplayer: 파일 재생 → 동일 데이터로 분석 재실행 (스케줄러 상태·ISR 순서는 미재현)
   │
   ├─ [5]  analyzer.py            Rule-based 이슈 감지 (<1ms)
   │         check_stack, check_heap, check_cpu,
@@ -184,7 +184,8 @@ AI 컨텍스트 전달:
   print(f"데드락 {result.deadlocks}회 탐지")
 
 보장:
-  동일 파일 + 동일 분석기 버전 → 동일 결과
+  동일 파일 + 동일 분석기 버전 → 동일 데이터 기반 분석 재실행
+  주의: 타임스탬프 의존 패턴은 완전히 동일하지 않을 수 있음
   realtime=False: 즉시 재생 (분석·테스트용)
   realtime=True:  실제 타이밍 재현 (UI 시연용)
 ```

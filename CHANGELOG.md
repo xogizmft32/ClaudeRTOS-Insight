@@ -782,3 +782,57 @@ debugger = RTOSDebuggerV3(
   - 재현성 체크리스트
 
 ### Validation: 25/25 PASS (Replay + Docker + Docs + 20/20 Protocol)
+
+## [4.4.1] — 2026-04-05 ✅ PRODUCTION READY
+
+### 1. Context Isolation (`host/analysis/analysis_context.py`)
+- `AnalysisContext`: 단일 분석 사이클을 위한 독립 컨텍스트
+  - 각 인스턴스가 자신만의 분석기(Rule/Corr/SM/RG/Orch/Queue/TimeNormalizer) 소유
+  - 인스턴스 간 상태 공유 없음 → race condition 없음
+  - `from_snapshot()` 팩토리: 스냅샷 1개로 완전한 Context 생성
+  - `run()`: 전체 파이프라인 실행 → ContextResult 반환
+  - `GlobalCausalGraph` 선택적 공유 (세션 레벨) 또는 독립 생성
+  - 처리: 0.17ms/컨텍스트
+  - 명시: Python GIL 환경에서 실질적 isolation = 인스턴스 분리. 
+           병렬화 필요 시 multiprocessing.Process 권장
+
+### 2. Multi-layer Cache (`host/ai/response_cache.py` v2)
+- L1 (메모리, 20개): 최근 접근 항목, O(1) 조회
+- L2 (파일, 200개): `~/.claudertos_cache/ai_responses.json`, 세션 간 지속
+- L1 히트 → 즉시 반환. L2 히트 → L1으로 승격
+- `Context-aware Key`: issue + snapshot 컨텍스트 결합
+- `Similarity 기반 버킷`: hwm=14 ≈ hwm=15 → 같은 키 (stack_danger)
+- `TTL × Confidence`: effective_ttl = base × (1 + confidence)
+  - conf=0.95 → 46.8h TTL (신뢰도 높은 응답 더 오래 유지)
+  - conf=0.50 → 36.0h TTL
+- `AI 결과 검증`: confidence < 0.50 이면 저장 거부 (오염 방지)
+- `invalidate(pattern)`: 패턴 기반 선택적 무효화
+
+### 3. Replay 한계 명확화 (`host/replay.py`)
+- 모듈 docstring에 실제 능력과 한계 명시:
+  - ✅ 입력 이벤트 기록
+  - ⚠ 시간 재현 (OS 스케줄링 지연으로 정확도 한계)
+  - ❌ 스케줄러 상태 재현 (FreeRTOS 내부 미기록)
+  - ❌ ISR 진입 순서 보장 (EXCCNT는 횟수만)
+  - ❌ 외부 입력 고정
+- "Deterministic Replay" 대신 "Session Replay (부분적 재현)"으로 명칭 수정
+- 완전한 Deterministic Replay 필요 시 Tracealyzer/SystemView 안내
+
+### 4. Docker-compose 멀티컨테이너 (`docker-compose.yml`)
+- `claudertos-host`: 호스트 분석 프로세스
+- `claudertos-ollama`: 로컬 AI (--profile ollama), healthcheck 포함
+- `claudertos-replay`: 세션 재생 (--profile replay)
+- 공유 volume: `claudertos-cache` (AI 캐시 컨테이너 간 공유)
+- 펌웨어(STM32)는 컨테이너화 불가함을 명시
+- x-env-common, x-volumes-common YAML anchor 재사용
+
+### 5. 과장 표현 수정 (23개 문서 전체)
+- `동일 분석 결과 보장` → `동일 데이터 기반 분석 재실행 (스케줄러·ISR 미재현)`
+- `재현성 보장` → `재현성 향상`
+- `CRITICAL always succeeds` → `CRITICAL 우선 처리 (reserved buffer 가득 차면 실패 가능)`
+- `Guaranteed WCET` → `Estimated WCET`
+- `Guaranteed consistency` → `단일 스레드 사용 시 일관성 보장`
+- `zero overhead (ISR)` → `~3 cycles per sample, 사실상 무시 가능`
+- `lock-free LDREX/STREX` → `lock-free LDREX/STREX — 펌웨어 계층`
+
+### Validation: 13/13 PASS + 20/20 Protocol PASS
