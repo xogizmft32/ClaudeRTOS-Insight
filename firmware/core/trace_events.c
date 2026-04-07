@@ -103,7 +103,7 @@ static void push_event_lockfree(TraceEventType_t type, uint8_t task_id,
     ev->reserved[1]      = 0U;
 
     /* data 복사 (8 bytes, 고정) */
-    if (data8) {
+    if (data8 != NULL) {
         const uint32_t *src = (const uint32_t *)data8;
         uint32_t       *dst = (uint32_t *)&ev->data;
         dst[0] = src[0];

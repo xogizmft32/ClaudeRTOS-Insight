@@ -145,7 +145,7 @@ size_t port_transport_send(const uint8_t *data, size_t len)
 
 void port_transport_diag(const char *msg)
 {
-    if (s_uart_busy) return;
+    if (s_uart_busy != 0U) return;
     size_t len = strlen(msg);
     HAL_UART_Transmit(&s_uart, (uint8_t *)msg, (uint16_t)len, 50U);
 }

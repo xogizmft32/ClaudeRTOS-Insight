@@ -40,7 +40,7 @@
 
 /* Error logging */
 #define PRIORITY_BUFFER_LOG_ERROR(msg) \
-    do { if (error_log_callback) error_log_callback(msg); } while(0)
+    do { if (error_log_callback != NULL) error_log_callback(msg); } while(0)
 
 /**
  * @brief Event priority levels

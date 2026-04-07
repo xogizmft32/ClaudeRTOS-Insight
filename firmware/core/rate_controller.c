@@ -63,7 +63,7 @@ uint16_t RateController_Adjust(RateController_t *controller,
     }
     
     /* Apply adjustments */
-    if (slow_down) {
+    if (slow_down != false) {
         /* Decrease sampling frequency (increase period) */
         new_rate = new_rate * 2U;
         if (new_rate > controller->max_rate_ms) {

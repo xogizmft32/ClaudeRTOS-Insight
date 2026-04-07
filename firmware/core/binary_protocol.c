@@ -179,7 +179,7 @@ bool BinaryProtocol_ValidateHeader(const uint8_t *buf, size_t len,
     if (buf[1] != PROTOCOL_MAGIC_BYTE2) return false;
 
     uint8_t major = buf[2];
-    if (major_out) *major_out = major;
+    if (major_out != NULL) *major_out = major;
 
     /* Major 버전 호환성 검사 */
     return (major >= PROTOCOL_COMPAT_MAJOR_MIN &&

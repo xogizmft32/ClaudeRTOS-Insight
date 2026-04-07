@@ -5,15 +5,15 @@
 [![Version](https://img.shields.io/badge/version-4.2.0-blue.svg)](https://github.com/xogizmft32/ClaudeRTOS-Insight)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Built with Vibe Coding](https://img.shields.io/badge/built%20with-vibe%20coding-purple.svg)](#about-vibe-coding)
+[![Built with AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted--Design-blue.svg)](#about-ai-assisted-design)
 
 ---
 
-## 🎵 About Vibe Coding
+## 🎵 About AI-Assisted Design
 
-이 프로젝트는 **바이브 코딩(Vibe Coding)** 방식으로 시작되었습니다.
+이 프로젝트는 **AI 보조 설계(AI-Assisted Design)** 방식으로 시작되었습니다.
 
-바이브 코딩은 2025년 OpenAI 공동창업자 Andrej Karpathy가 제안한 개발 패러다임으로,
+AI 보조 설계은 2025년 OpenAI 공동창업자 Andrej Karpathy가 제안한 개발 패러다임으로,
 자연어로 의도를 설명하면 AI가 코드를 생성하고, 개발자는 방향성과 품질을 검토하는
 인간-AI 협업 방식입니다.
 
@@ -224,4 +224,4 @@ AI cost (ollama):       $0
 **Target:** STM32F446RE @ 180MHz  
 **RTOS:** FreeRTOS 10.0+  
 **Host:** N100 / Linux / Python 3.8+  
-**Started:** Vibe Coding with Claude (Anthropic)
+**Started:** AI-Assisted Design with Claude (Anthropic)

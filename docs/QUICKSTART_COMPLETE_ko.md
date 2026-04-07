@@ -1,7 +1,7 @@
 # ClaudeRTOS-Insight — 빠른 시작 가이드 (한국어)
 
 > 영문 버전: `docs/QUICKSTART_COMPLETE.md`  
-> 바이브 코딩(Vibe Coding) × Claude로 개발된 프로젝트입니다.
+> AI 보조 설계(AI-Assisted Design) 방법론으로 개발된 프로젝트입니다.
 
 ---
 

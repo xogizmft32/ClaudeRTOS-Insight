@@ -1,6 +1,6 @@
 # AI Analysis Guide — ClaudeRTOS-Insight
 
-> Built with Vibe Coding × Claude. See [README](../README.md#about-vibe-coding).
+> Built with AI-Assisted Design × Claude. See [README](../README.md#about-ai-assisted-design).
 
 ## Core Principle
 

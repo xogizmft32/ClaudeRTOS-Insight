@@ -42,7 +42,7 @@ static void log_error_cb(const char *msg)
 /* ── 초기화 ────────────────────────────────────────────────── */
 void OSMonitorV3_Init(void)
 {
-    if (s_init) return;
+    if (s_init != 0U) return;
     memset(&s_stats, 0, sizeof(s_stats));
 
     PriorityBufferV4_SetErrorCallback(log_error_cb);

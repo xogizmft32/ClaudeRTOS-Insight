@@ -1,7 +1,7 @@
 # ClaudeRTOS-Insight — CHANGELOG
 
-> **Built with Vibe Coding × Claude**  
-> 이 프로젝트는 자연어 의도 설명 → AI 코드 생성 → 개발자 검토 협업 방식(바이브 코딩)으로 개발됐습니다.  
+> **Built with AI-Assisted Design × Claude**  
+> 이 프로젝트는 자연어 의도 설명 → AI 코드 생성 → 개발자 검토 협업 방식(AI 보조 설계)으로 개발됐습니다.  
 > 개발 기간: 2026-03-19 ~ 2026-04-03 | 총 버전: v2.3.0 → v4.2.0 | 파일: 99개
 
 ---
@@ -902,3 +902,41 @@ debugger = RTOSDebuggerV3(
 - CHANGELOG.md: 과장 표현 수정
 
 ### Validation: 20/20 Protocol PASS
+
+## [4.6.0] — 2026-04-07 ✅ PRODUCTION READY
+
+### 1. 용어 변경: AI 보조 설계 (AI-Assisted Design)
+- 'AI 보조 설계(AI-Assisted Design)'로 용어 통일
+- 임베디드 CAD 패턴과 동일한 네이밍, 27개 문서 일괄 변경
+
+### 2. MISRA C R14.4 수정
+- 8개 파일 `if(ptr)` → `if(ptr != NULL)` 수정
+- `docs/MISRA_C_GUIDELINES.md`: Known Deviations 공식 문서화
+
+### 3. 빌드 모드 + 프로파일 (`firmware/core/trace_config.h`)
+- BUILD_RELEASE: Zero footprint (모든 trace 코드 제거)
+- PROFILE_LITE: STAT 모드, 28B RAM (단순 제어 솔루션)
+- PROFILE_STANDARD: 기본 (4KB, postmortem)
+- PROFILE_EXPERT: 고사양 (8KB, realtime)
+- Makefile: `make RELEASE=1` / `make PROFILE=LITE|EXPERT`
+
+### 4. ContextMasker (`host/analysis/context_masker.py`)
+- NONE/NAMES/ADDRESSES/STRICT 4단계
+- 일관된 익명화 매핑 (HighTask→Task_A, 세션 내 유지)
+- 역복원: `restore_text()`, 환경 변수: CLAUDERTOS_MASK_LEVEL
+
+### 5. 신규 문서
+- `docs/TRANSPORT_GUIDE.md`: ITM/UART 비교, 설정, 한계, 전환 방법
+- `docs/OFFLINE_GUIDE.md`: 폐쇄망 운용, wheel/Docker 반입, 체크리스트
+
+### 6. Peripheral Monitor (`firmware/modules/peripheral/`)
+- `peripheral_monitor.h/c`: 공통 인터페이스 + 레지스트리
+- `gpio_monitor.h`: GPIO 글리치/고착 감지 (1순위)
+- `host/patterns/peripheral/gpio_patterns.json`: KP-GPIO-001~002
+- 이벤트 타입 0x70~0xFF 예약
+
+### 7. OS 커널 무결성 확인
+- FreeRTOS 커널 파일 미수정 확인 (Hook/Trace Macros만 사용)
+
+### Validation: 20/20 Protocol PASS
+### 문서: 27개 전체 이상 없음 (버전·과장·용어·링크)

@@ -132,7 +132,7 @@ void FaultInjection_StackOverflow(FaultInjectionResult_t *result)
  */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
-    if (fault_in_progress) {
+    if (fault_in_progress != false) {
         uint32_t detection_time = xTaskGetTickCount() - fault_start_time;
         
         if (test_config.verbose) {
@@ -223,7 +223,7 @@ void FaultInjection_NullPointer(FaultInjectionResult_t *result)
  */
 void HardFault_Handler(void)
 {
-    if (fault_in_progress) {
+    if (fault_in_progress != false) {
         /* Hard fault detected during test */
         if (test_config.verbose) {
             printf("Hard fault detected during fault injection test\n");

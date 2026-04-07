@@ -1,3 +1,16 @@
+# 빌드 모드 / 프로파일 플래그
+# make RELEASE=1              → 릴리즈 (Zero footprint)
+# make DEBUG=1 PROFILE=LITE   → 저사양
+# make DEBUG=1 PROFILE=EXPERT → 고사양
+ifdef RELEASE
+  BUILD_FLAGS += -DCLAUDERTOS_BUILD_MODE=BUILD_RELEASE
+else
+  BUILD_FLAGS += -DCLAUDERTOS_BUILD_MODE=BUILD_DEBUG
+endif
+ifdef PROFILE
+  BUILD_FLAGS += -DCLAUDERTOS_PROFILE=PROFILE_$(PROFILE)
+endif
+
 # Makefile — ClaudeRTOS-Insight V3.2
 # Target: STM32 Nucleo-F446RE (STM32F446RE @ 180MHz)
 #

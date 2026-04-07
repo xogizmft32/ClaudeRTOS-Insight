@@ -27,6 +27,59 @@
 #ifndef TRACE_CONFIG_H
 #define TRACE_CONFIG_H
 
+
+/* ════════════════════════════════════════════════════════════
+ * 빌드 모드 및 디버깅 프로파일
+ *
+ * 사용:
+ *   make RELEASE=1             → BUILD_RELEASE (Zero footprint)
+ *   make DEBUG=1 PROFILE=LITE  → 저사양 (8KB RAM MCU)
+ *   make DEBUG=1               → STANDARD (기본)
+ *   make DEBUG=1 PROFILE=EXPERT → 고사양 (10+ 태스크)
+ * ════════════════════════════════════════════════════════════ */
+
+#define BUILD_DEBUG    0
+#define BUILD_RELEASE  1
+
+#ifndef CLAUDERTOS_BUILD_MODE
+#  define CLAUDERTOS_BUILD_MODE  BUILD_DEBUG
+#endif
+
+#define PROFILE_LITE      0   /* STAT 모드, 28B RAM, offline AI */
+#define PROFILE_STANDARD  1   /* FULL/256이벤트, 4KB, postmortem AI */
+#define PROFILE_EXPERT    2   /* FULL/512이벤트, 8KB, realtime AI  */
+
+#ifndef CLAUDERTOS_PROFILE
+#  define CLAUDERTOS_PROFILE  PROFILE_STANDARD
+#endif
+
+/* ── 빌드 모드 적용 ────────────────────────────────────────── */
+#if CLAUDERTOS_BUILD_MODE == BUILD_RELEASE
+#  undef  CLAUDERTOS_TRACE_ENABLED
+#  define CLAUDERTOS_TRACE_ENABLED  0
+#  undef  CLAUDERTOS_TRACE_MODE
+#  define CLAUDERTOS_TRACE_MODE     TRACE_MODE_OFF
+#  define TRACE_ENABLE_CTX_SWITCH   0
+#  define TRACE_ENABLE_ISR          0
+#  define TRACE_ENABLE_MUTEX        0
+#  define TRACE_ENABLE_MALLOC       0
+#else
+#  if CLAUDERTOS_PROFILE == PROFILE_LITE
+#    undef  CLAUDERTOS_TRACE_MODE
+#    define CLAUDERTOS_TRACE_MODE   TRACE_MODE_STAT
+#    undef  TRACE_RING_SIZE
+#    define TRACE_RING_SIZE         0U
+#    define TRACE_ENABLE_ISR        0
+#    define TRACE_ENABLE_MUTEX      0
+#    define TRACE_ENABLE_MALLOC     0
+#  elif CLAUDERTOS_PROFILE == PROFILE_EXPERT
+#    undef  TRACE_RING_SIZE
+#    define TRACE_RING_SIZE         512U
+#    undef  TRACE_SAMPLE_RATE
+#    define TRACE_SAMPLE_RATE       1U
+#  endif
+#endif
+
 /* ── 트레이스 모드 ──────────────────────────────────────── */
 #define TRACE_MODE_FULL   0   /* 링 버퍼에 전체 이벤트 저장 */
 #define TRACE_MODE_STAT   1   /* 카운터만 (최소 오버헤드)    */

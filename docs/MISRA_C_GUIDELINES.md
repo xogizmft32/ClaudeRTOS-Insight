@@ -550,3 +550,17 @@ Expand to all modules:
 
 **Last Updated:** 2026-03-19  
 **Status:** Guidelines (verification pending)
+
+---
+
+## Known Deviations (Formally Documented)
+
+| Rule | Location | Status | Rationale |
+|------|----------|--------|-----------|
+| R14.4 | All .c files | ✅ Resolved | `if(ptr)` → `if(ptr != NULL)` — corrected |
+| R15.5 | Various | Accepted | Early return for error handling — reviewed safe |
+| R17.7 | fault_injection.c | Accepted | Test code only, not production |
+| R20.7 | WIRE_PUT macros | Accepted | Low-level byte macros, alignment safe |
+
+> Deviations reviewed by domain expert. Certified tool (PC-lint/Polyspace) not used.
+> This project is a debugging support tool, not safety-certified product.

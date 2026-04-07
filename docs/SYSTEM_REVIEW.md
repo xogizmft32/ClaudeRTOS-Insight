@@ -295,3 +295,32 @@ FAULT_ADC_OVERRUN,       FAULT_TIMER_OVERFLOW,
 // 전체 주변장치 테스트
 uint32_t n = FaultInjection_RunPeripheralTests(results);
 ```
+
+---
+
+## 추가 컴포넌트 
+
+### ContextMasker (`host/analysis/context_masker.py`)
+```bash
+export CLAUDERTOS_MASK_LEVEL=names|addresses|strict
+```
+4단계 마스킹, 일관된 익명화 매핑, restore_text()로 역복원.
+
+### Peripheral Monitor (`firmware/modules/peripheral/`)
+```
+peripheral_monitor.h/c   ← 공통 인터페이스 + 레지스트리
+gpio_monitor.h           ← GPIO 글리치/상태 감지 (1순위)
+```
+이벤트 타입 예약: 0x70(GPIO), 0x80(I2C), 0x90(SPI), 0xA0(UART)
+
+### 빌드 모드 + 프로파일 (`firmware/core/trace_config.h`)
+```makefile
+make RELEASE=1              # Zero footprint
+make DEBUG=1 PROFILE=LITE   # 저사양 (28B RAM, offline AI)
+make DEBUG=1                # STANDARD (기본, 4KB, postmortem)
+make DEBUG=1 PROFILE=EXPERT # 고사양 (8KB, realtime AI)
+```
+
+### 관련 문서
+- `docs/TRANSPORT_GUIDE.md`: ITM vs UART 비교·설정·한계
+- `docs/OFFLINE_GUIDE.md`: 폐쇄망 운용·wheel 반입·Docker

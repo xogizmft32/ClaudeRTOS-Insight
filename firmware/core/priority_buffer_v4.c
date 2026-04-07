@@ -19,7 +19,7 @@ void PriorityBufferV4_SetErrorCallback(ErrorLogCallback_t callback) {
 }
 
 static void log_error(PriorityBufferV4_t *buf, BufferError_t error, const char *msg) {
-    if (buf) { buf->error_count++; buf->last_error = error; }
+    if (buf != NULL) { buf->error_count++; buf->last_error = error; }
     PRIORITY_BUFFER_LOG_ERROR(msg);
 }
 

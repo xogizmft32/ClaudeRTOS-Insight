@@ -1,6 +1,6 @@
 # ClaudeRTOS Trace Guide V2
 
-> Part of ClaudeRTOS-Insight — started with Vibe Coding × Claude.
+> Part of ClaudeRTOS-Insight — started with AI-Assisted Design × Claude.
 
 ## Overview
 

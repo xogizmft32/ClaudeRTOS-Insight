@@ -4,8 +4,8 @@
 **Time:** ~20 minutes  
 **AI cost:** ~$0.015/issue (postmortem), $0 with Ollama
 
-> This project was started via **Vibe Coding** — natural language intent → AI-generated code.  
-> See [README.md](../README.md#about-vibe-coding) for details.
+> This project was developed via **AI-Assisted Design** — natural language intent → AI-generated code.  
+> See [README.md](../README.md#about-ai-assisted-design) for details.
 
 ---
 
@@ -187,4 +187,4 @@ A: `TimeNormalizer` converts DWT CYCCNT (cycles), RTOS tick (uptime_ms), and pac
 
 **Target:** STM32F446RE @ 180MHz | **RTOS:** FreeRTOS 10.0+  
 **Validation:** 20/20 PASS | **Protocol:** Binary V4 (field-based, V3 compatible)  
-**Started with:** Vibe Coding × Claude
+**Started with:** AI-Assisted Design × Claude

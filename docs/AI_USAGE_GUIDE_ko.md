@@ -1,7 +1,7 @@
 # AI 분석 활용 가이드 (한국어) — ClaudeRTOS-Insight
 
 > 영문 버전: `docs/AI_USAGE_GUIDE.md`  
-> 바이브 코딩 × Claude로 개발된 프로젝트입니다.
+> AI 보조 설계(AI-Assisted Design) 방법론으로 개발된 프로젝트입니다.
 
 ---
 

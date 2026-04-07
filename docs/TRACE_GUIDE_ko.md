@@ -2,7 +2,7 @@
 
 > 영문 버전: `docs/TRACE_GUIDE.md`
 
-> ClaudeRTOS-Insight — 바이브 코딩 × Claude로 시작된 프로젝트입니다.
+> ClaudeRTOS-Insight — AI 보조 설계(AI-Assisted Design) 방법론으로 시작된 프로젝트입니다.
 
 ## 개요
 

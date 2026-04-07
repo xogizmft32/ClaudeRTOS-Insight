@@ -1,0 +1,47 @@
+{
+  "description": "GPIO 모니터링 패턴",
+  "patterns": [
+    {
+      "id": "KP-GPIO-001",
+      "name": "GPIO Glitch — 예상치 못한 핀 반전",
+      "category": "gpio",
+      "severity": "Medium",
+      "enabled": true,
+      "description": "GPIO 핀이 1샘플 주기 내 반전 (글리치 또는 노이즈)",
+      "match": {
+        "require_events": ["gpio_glitch"],
+        "min_confidence": 0.65
+      },
+      "causal_chain_template": [
+        "GPIO '{name}' 글리치 감지 ({glitch_count}회)",
+        "노이즈 또는 소프트웨어 버그 가능"
+      ],
+      "diagnosis": {
+        "root_cause": "GPIO 핀 노이즈 또는 예상치 못한 신호 변화",
+        "fix": "1) 디바운스 필터 추가 2) 풀업/풀다운 저항 확인",
+        "prevention": "입력 GPIO에 하드웨어 RC 디바운스 필터 추가"
+      }
+    },
+    {
+      "id": "KP-GPIO-002",
+      "name": "GPIO 상태 고착",
+      "category": "gpio",
+      "severity": "Low",
+      "enabled": true,
+      "description": "GPIO 핀이 N 샘플 이상 동일 상태 유지",
+      "match": {
+        "require_events": [],
+        "min_confidence": 0.5
+      },
+      "causal_chain_template": [
+        "GPIO '{name}' 상태 고착",
+        "드라이버 미작동 또는 하드웨어 연결 불량"
+      ],
+      "diagnosis": {
+        "root_cause": "드라이버 미작동 또는 하드웨어 불량",
+        "fix": "GPIO 출력 드라이버 확인, 회로 연결 점검",
+        "prevention": "GPIO 자가진단 루틴 추가"
+      }
+    }
+  ]
+}
