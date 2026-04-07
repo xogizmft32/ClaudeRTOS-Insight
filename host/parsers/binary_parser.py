@@ -1,3 +1,16 @@
+
+# 페리페럴 이벤트 타입 매핑 (trace_events.h와 동기화)
+_PERIPHERAL_EVENT_TYPES = {
+    0x70: 'gpio_change',
+    0x71: 'gpio_glitch',
+    0x80: 'i2c_timeout',
+    0x81: 'i2c_nack',
+    0x82: 'i2c_stats',
+    0x90: 'spi_overrun',
+    0xA0: 'uart_error',
+    0xB0: 'adc_overrun',
+    0xC0: 'dma_error',
+}
 #!/usr/bin/env python3
 """
 Binary Parser V3.2

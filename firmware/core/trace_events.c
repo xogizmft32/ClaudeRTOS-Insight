@@ -277,3 +277,41 @@ void TraceEvent_Free(void *ptr)
     data[1] = 0U;
     push_event_lockfree(TRACE_FREE, cur_task_id(), data);
 }
+
+/* ── 페리페럴 이벤트 기록 ────────────────────────────────────
+ * 이 함수들은 peripheral_monitor 모듈에서만 호출된다.
+ * ISR-safe: 링 버퍼 push는 LDREX/STREX 기반 lock-free.
+ */
+void TraceEvent_GPIO(uint8_t event_type, uint8_t pin_idx,
+                     uint8_t new_state, uint32_t count) {
+#if CLAUDERTOS_TRACE_MODE != TRACE_MODE_OFF
+    TraceEvent_t ev;
+    ev.timestamp_cycles = DWT_GetCycles();
+    ev.event_type       = event_type;
+    ev.task_id          = 0xFEU;  /* 0xFE = Peripheral Monitor */
+    ev.reserved[0]      = pin_idx;
+    ev.reserved[1]      = new_state;
+    ev.payload.raw[0]   = (uint8_t)(count & 0xFFU);
+    ev.payload.raw[1]   = (uint8_t)((count >> 8U) & 0xFFU);
+    (void)RingBuffer_Push(&s_trace_ring, &ev);
+#else
+    (void)event_type; (void)pin_idx;
+    (void)new_state;  (void)count;
+#endif
+}
+
+void TraceEvent_Peripheral(uint8_t event_type, uint8_t error_code) {
+#if CLAUDERTOS_TRACE_MODE != TRACE_MODE_OFF
+    TraceEvent_t ev;
+    ev.timestamp_cycles = DWT_GetCycles();
+    ev.event_type       = event_type;
+    ev.task_id          = 0xFEU;
+    ev.reserved[0]      = error_code;
+    ev.reserved[1]      = 0U;
+    ev.payload.raw[0]   = 0U;
+    ev.payload.raw[1]   = 0U;
+    (void)RingBuffer_Push(&s_trace_ring, &ev);
+#else
+    (void)event_type; (void)error_code;
+#endif
+}

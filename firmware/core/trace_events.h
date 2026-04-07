@@ -63,6 +63,17 @@ typedef enum {
     TRACE_MALLOC         = 0x60U,
     TRACE_FREE           = 0x61U,
     /* ISR 개별 hook 없음 — DWT EXCCNT로 빈도 측정 */
+
+    /* ── 페리페럴 이벤트 (0x70~0xCF 예약) ────────────────── */
+    TRACE_GPIO_CHANGE    = 0x70U,  /* GPIO 상태 변화 */
+    TRACE_GPIO_GLITCH    = 0x71U,  /* GPIO 글리치 감지 */
+    TRACE_I2C_TIMEOUT    = 0x80U,  /* I2C 타임아웃 */
+    TRACE_I2C_NACK       = 0x81U,  /* I2C NACK */
+    TRACE_I2C_STATS      = 0x82U,  /* I2C 통계 스냅샷 */
+    TRACE_SPI_OVERRUN    = 0x90U,  /* SPI 오버런 */
+    TRACE_UART_ERROR     = 0xA0U,  /* UART 오류 (PE/FE) */
+    TRACE_ADC_OVERRUN    = 0xB0U,  /* ADC 오버런 */
+    TRACE_DMA_ERROR      = 0xC0U,  /* DMA 전송 오류 */
 } TraceEventType_t;
 
 /* ── 이벤트 레코드 (16 bytes 고정) ──────────────────────────
@@ -146,4 +157,8 @@ void TraceEvent_MutexTimeout(SemaphoreHandle_t mutex);
 void TraceEvent_Malloc(void *ptr, size_t size);
 void TraceEvent_Free(void *ptr);
 
+
+/* 페리페럴 이벤트 (peripheral_monitor에서 사용) */
+void TraceEvent_GPIO(uint8_t event_type, uint8_t pin_idx, uint8_t new_state, uint32_t count);
+void TraceEvent_Peripheral(uint8_t event_type, uint8_t error_code);
 #endif /* TRACE_EVENTS_H */

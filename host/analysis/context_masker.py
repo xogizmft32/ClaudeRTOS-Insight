@@ -71,7 +71,28 @@ class ContextMasker:
             return '0x' + '*' * (len(addr)-6) + addr[-4:]
         return '0x****'
 
+
+    def load_secrets(self, config_path: str = None) -> 'SecretsConfig':
+        """
+        프로젝트별 금지 변수 목록 로드.
+        마스킹 레벨과 무관하게 항상 적용됨 (LEVEL_NONE이어도 차단).
+        """
+        self._secrets = SecretsConfig.load(config_path)
+        return self._secrets
+
     def mask(self, ctx: Dict) -> Dict:
+        """컨텍스트 딕셔너리 마스킹 (레벨 기반 + secrets 기반 복합)."""
+        if not self.is_active and not hasattr(self, '_secrets'):
+            return ctx
+        import copy
+        ctx = copy.deepcopy(ctx)
+        if self.is_active:
+            self._walk(ctx)
+        if hasattr(self, '_secrets') and self._secrets is not None:
+            self._secrets.apply(ctx)
+        return ctx
+
+    def _mask_impl(self, ctx: Dict) -> Dict:
         if not self.is_active: return ctx
         import copy
         ctx = copy.deepcopy(ctx)
@@ -135,3 +156,141 @@ class ContextMasker:
         return {'level': self._level.value,
                 'tasks': dict(self._task_map),
                 'mutexes': dict(self._mutex_map)}
+
+
+# ════════════════════════════════════════════════════════════
+# 프로젝트별 금지 변수 목록 기반 동적 마스킹
+#
+# 사용:
+#   1) 프로젝트 루트에 .claudertos_secrets.json 생성
+#   2) ContextMasker에 로드: masker.load_secrets("path/to/config")
+#   3) 또는 환경 변수: CLAUDERTOS_SECRETS_FILE=/path/to/config
+#
+# .claudertos_secrets.json 형식:
+# {
+#   "forbidden_task_names": ["PaymentTask", "SecureTask"],
+#   "forbidden_mutex_names": ["key_mutex", "cert_mutex"],
+#   "forbidden_keys":       ["session_id", "device_key", "cert_hash"],
+#   "forbidden_value_patterns": ["^sk-", "^0xDEAD"],
+#   "replacement": "***REDACTED***"   // 선택 (기본: "***")
+# }
+# ════════════════════════════════════════════════════════════
+
+import json as _json
+import re as _re
+from pathlib import Path as _Path
+
+
+class SecretsConfig:
+    """
+    프로젝트별 금지 변수 목록.
+
+    절대 AI에 전달되면 안 되는 필드·값을 정의한다.
+    context_masker.py의 레벨 기반 마스킹과 독립적으로 동작.
+    즉, LEVEL_NONE이어도 secrets에 정의된 항목은 항상 차단.
+    """
+
+    DEFAULT_FILE = '.claudertos_secrets.json'
+    REPLACEMENT  = '***REDACTED***'
+
+    def __init__(self):
+        self.forbidden_task_names:    list = []
+        self.forbidden_mutex_names:   list = []
+        self.forbidden_keys:          list = []   # JSON key 이름
+        self.forbidden_value_patterns: list = []  # 값 정규식 패턴
+        self.replacement:              str  = self.REPLACEMENT
+        self._compiled: list = []
+
+    @classmethod
+    def load(cls, config_path: str = None) -> 'SecretsConfig':
+        """
+        JSON 파일에서 금지 목록 로드.
+        config_path=None이면 환경 변수 CLAUDERTOS_SECRETS_FILE 또는
+        현재 디렉터리의 .claudertos_secrets.json 탐색.
+        """
+        import os
+        cfg = cls()
+        path = (config_path
+                or os.environ.get('CLAUDERTOS_SECRETS_FILE')
+                or cls.DEFAULT_FILE)
+        p = _Path(path)
+        if not p.exists():
+            return cfg   # 파일 없으면 빈 설정 (오류 아님)
+        try:
+            data = _json.loads(p.read_text('utf-8'))
+            cfg.forbidden_task_names    = data.get('forbidden_task_names', [])
+            cfg.forbidden_mutex_names   = data.get('forbidden_mutex_names', [])
+            cfg.forbidden_keys          = data.get('forbidden_keys', [])
+            cfg.forbidden_value_patterns = data.get('forbidden_value_patterns', [])
+            cfg.replacement             = data.get('replacement', cls.REPLACEMENT)
+            cfg._compiled = [_re.compile(p) for p in cfg.forbidden_value_patterns]
+        except Exception as e:
+            import warnings
+            warnings.warn(f"SecretsConfig 로드 실패: {e}")
+        return cfg
+
+    def is_forbidden_task(self, name: str) -> bool:
+        return name in self.forbidden_task_names
+
+    def is_forbidden_mutex(self, name: str) -> bool:
+        return name in self.forbidden_mutex_names
+
+    def is_forbidden_key(self, key: str) -> bool:
+        return key in self.forbidden_keys
+
+    def is_forbidden_value(self, value: str) -> bool:
+        return any(p.search(str(value)) for p in self._compiled)
+
+    def apply(self, obj):
+        """딕셔너리/리스트에서 forbidden 항목을 교체."""
+        if isinstance(obj, dict):
+            for k, v in list(obj.items()):
+                if self.is_forbidden_key(k):
+                    obj[k] = self.replacement
+                elif isinstance(v, str):
+                    if self.is_forbidden_value(v):
+                        obj[k] = self.replacement
+                    elif k in ('name','task','from_task') and self.is_forbidden_task(v):
+                        obj[k] = self.replacement
+                    elif k == 'mutex_name' and self.is_forbidden_mutex(v):
+                        obj[k] = self.replacement
+                elif isinstance(v, (dict, list)):
+                    self.apply(v)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                if isinstance(item, (dict, list)):
+                    self.apply(item)
+                elif isinstance(item, str) and self.is_forbidden_value(item):
+                    obj[i] = self.replacement
+        return obj
+
+    @staticmethod
+    def create_template(output_path: str = '.claudertos_secrets.json') -> None:
+        """비어있는 설정 파일 템플릿 생성."""
+        template = {
+            "_comment": "ClaudeRTOS 민감 정보 차단 목록. 이 파일은 .gitignore에 추가 권장.",
+            "forbidden_task_names": [
+                "PaymentTask",
+                "SecureTask"
+            ],
+            "forbidden_mutex_names": [
+                "key_mutex",
+                "cert_mutex"
+            ],
+            "forbidden_keys": [
+                "session_id",
+                "device_key",
+                "cert_hash",
+                "password"
+            ],
+            "forbidden_value_patterns": [
+                "^sk-",
+                "^Bearer ",
+                "^0xDEAD"
+            ],
+            "replacement": "***REDACTED***"
+        }
+        _Path(output_path).write_text(
+            _json.dumps(template, indent=2, ensure_ascii=False),
+            encoding='utf-8')
+        print(f"템플릿 생성: {output_path}")

@@ -1,0 +1,50 @@
+{
+  "description": "I2C 모니터링 패턴",
+  "patterns": [
+    {
+      "id": "KP-I2C-001",
+      "name": "I2C NACK Storm — 슬레이브 무응답 반복",
+      "category": "i2c",
+      "severity": "High",
+      "enabled": true,
+      "description": "짧은 시간 내 NACK이 반복 발생. 슬레이브 주소 오류 또는 장치 응답 불가.",
+      "match": {
+        "require_events": ["i2c_nack"],
+        "event_count_min": {"i2c_nack": 3},
+        "min_confidence": 0.70
+      },
+      "causal_chain_template": [
+        "I2C 마스터 → 슬레이브 주소 전송",
+        "NACK 수신 ({nack_count}회)",
+        "슬레이브 미응답 — 주소 오류 또는 전원 문제"
+      ],
+      "diagnosis": {
+        "root_cause": "슬레이브 주소 오류 또는 장치 전원/초기화 문제",
+        "fix": "1) 슬레이브 주소 확인 (7bit/8bit 혼용 주의) 2) 풀업 저항 확인 (4.7kΩ) 3) 장치 전원 확인",
+        "prevention": "I2C 버스 스캔으로 슬레이브 주소 사전 검증"
+      }
+    },
+    {
+      "id": "KP-I2C-002",
+      "name": "I2C 버스 타임아웃",
+      "category": "i2c",
+      "severity": "High",
+      "enabled": true,
+      "description": "SCL 라인 stretch 타임아웃. 슬레이브가 클럭을 과도하게 잡아당김.",
+      "match": {
+        "require_events": ["i2c_timeout"],
+        "min_confidence": 0.75
+      },
+      "causal_chain_template": [
+        "I2C 마스터 → SCL 클럭 출력",
+        "슬레이브 SCL stretch (Clock Stretching)",
+        "타임아웃 ({timeout_count}회) → 버스 리셋 필요"
+      ],
+      "diagnosis": {
+        "root_cause": "슬레이브 Clock Stretching 과다 또는 버스 고착",
+        "fix": "1) HAL_I2C_Init 타임아웃 증가 2) 슬레이브 처리 시간 단축 3) I2C 버스 리셋 (SCL 9번 토글)",
+        "prevention": "슬레이브 Clock Stretching 비활성화 또는 최소화"
+      }
+    }
+  ]
+}

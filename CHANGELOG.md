@@ -940,3 +940,56 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 20/20 Protocol PASS
 ### 문서: 27개 전체 이상 없음 (버전·과장·용어·링크)
+
+## [4.7.0] — 2026-04-08 ✅ PRODUCTION READY
+
+### 1. Peripheral 디버깅 완성
+- `firmware/modules/peripheral/gpio_monitor.c`: GPIO 구현체
+  - 1Hz 폴링, 글리치(1샘플 내 반전) 감지, 상태 이력 16샘플
+  - 오버헤드: 핀당 ~3 cycles (사실상 무시 가능)
+- `firmware/modules/peripheral/i2c_monitor.h/c`: I2C 구현체
+  - SR1 레지스터 폴링 (TIMEOUT/NACK/ARLO 플래그)
+  - STM32 비-환경 시뮬레이션 모드 자동 전환
+- `firmware/core/trace_events.h/c`: 페리페럴 이벤트 함수
+  - `TraceEvent_GPIO()`, `TraceEvent_Peripheral()` 추가
+  - TRACE_GPIO_CHANGE/GLITCH, TRACE_I2C_TIMEOUT/NACK 등 8개 타입
+- `host/patterns/peripheral/i2c_patterns.json`: KP-I2C-001~002
+
+### 2. 문서 구조 정리
+- `docs/DOCUMENT_INDEX.md` 신규: 전체 문서 인덱스 (29개)
+- `docs/FREERTOS_HOOK_GUIDE.md` 신규: FreeRTOS Hook/Trace Macro 완전 가이드
+  - Trace Macro vs Hook 개념 구분
+  - 커널 파일 미수정 확인 (FreeRTOSConfig.h에서만 define)
+  - vApplicationStackOverflowHook, MallocFailedHook, IdleHook
+  - FreeRTOSConfig.h 최소 필수 설정
+
+### 3. 동적 마스킹 (SecretsConfig)
+- `SecretsConfig` 클래스 추가 (`host/analysis/context_masker.py`)
+- `.claudertos_secrets.json`으로 프로젝트별 금지 목록 정의
+  - `forbidden_task_names`: 태스크명 차단 (예: "PaymentTask")
+  - `forbidden_mutex_names`: Mutex명 차단
+  - `forbidden_keys`: JSON 키 차단 (예: "device_key")
+  - `forbidden_value_patterns`: 정규식 패턴 차단 (예: "^sk-")
+- MaskLevel 무관하게 항상 적용 (LEVEL_NONE이어도 차단)
+- `SecretsConfig.create_template()`: 템플릿 파일 자동 생성
+- 환경 변수: `CLAUDERTOS_SECRETS_FILE=/path/to/config`
+
+### 4. 리소스 보고서 (ResourceReporter)
+- `host/analysis/resource_reporter.py` 신규
+- 릴리즈 시점에 자동 생성: CPU 오버헤드, RAM 점유, Heap 추이
+- Markdown 출력 (README 삽입 가능) + JSON (CI 파이프라인 연동)
+- 프로파일별 비교표 포함 (LITE/STANDARD/EXPERT/RELEASE)
+- 태스크별 스택 HWM 추이 (stack_hwm < 20W 경고 표시)
+
+### 5. 세션 로거 (SessionLogger)
+- `host/analysis/session_logger.py` 신규
+- 세션 데이터 3파일 동시 기록:
+  - `.log`: 사람이 읽는 텍스트 (타임스탬프 + 심각도)
+  - `.jsonl`: 구조화 JSON Lines (분석 도구/검색용)
+  - `.csv`: 태스크 통계 (스프레드시트 분석용)
+- `log_snapshot()`, `log_issue()`, `log_pattern_match()`,
+  `log_ai_result()`, `log_alert()`
+- `SessionLogger.search_logs()`: 저장된 세션에서 조건 검색
+
+### 문서: 29개 전체 이상 없음
+### Validation: 20/20 Protocol PASS
