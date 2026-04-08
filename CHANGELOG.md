@@ -993,3 +993,44 @@ debugger = RTOSDebuggerV3(
 
 ### 문서: 29개 전체 이상 없음
 ### Validation: 20/20 Protocol PASS
+
+## [4.8.0] — 2026-04-08 ✅ PRODUCTION READY
+
+### 1. 10분 도입 가이드 (`docs/GETTING_STARTED.md`)
+- Section A: STM32 Nucleo-F446RE — 5단계, 10분, copy-paste 실행
+- Section B-1: Cortex-M4/M7 계열 (STM32F7/H7, NXP i.MX RT) — CPU Hz만 변경
+- Section B-2: Cortex-M0/M0+ (STM32G0, L0, SAMD21) — UART 필수, DWT 대안
+- Section B-3: 비-ARM (ESP32, RP2040) — esp32 포트 사용법
+- 자주 발생하는 문제 대응표 포함
+
+### 2. AI 분석기 고도화 (`host/analysis/trend_analyzer.py`)
+- `TrendAnalyzer`: 슬라이딩 윈도우 기반 시계열 트렌드 분석
+  - CPU/Heap slope(기울기) 계산 (numpy 또는 순수 Python 폴백)
+  - 포화/고갈 예측: "CPU 88% → +1%/s, 포화까지 약 12초"
+  - R² 선형 적합도 포함 (낮으면 불규칙 신호)
+- `AnomalyScorer`: Z-score 기반 이상 점수
+  - binary 임계값 → "3.2σ 이상치" 수치화
+  - AI 컨텍스트에 전달 → 가설 품질 향상
+- `group_issues_by_root_cause()`: 근본 원인 그룹화
+  - stack_overflow + heap_exhaustion → memory_pressure 그룹
+  - AI가 동일 원인 이슈를 묶어 인식 가능
+- `enrich_context_with_analysis()`: 컨텍스트에 분석 정보 자동 삽입
+
+### 3. 자동 분석 보고서 (`host/analysis/debug_report.py`)
+- `DebugReportGenerator`: 세션 결과 Markdown 자동 생성
+  - 세션 요약 (이슈 수, 심각도별 분류)
+  - 이슈 상세 (인과 체인, 수정 코드 before/after)
+  - 리소스 추이 ASCII 막대그래프
+  - Mermaid 인과관계 다이어그램 (GlobalCausalGraph 연동)
+  - 미해결 항목 체크리스트
+  - 다음 세션 권장 사항 자동 생성
+
+### 4. AI 관점에서 가장 개선하고 싶었던 부분 (기록)
+- 과장 표현과 실제 능력의 간격: "보장" 표현의 위험성
+  매 패키징 전 자동 문서 점검으로 제도화
+- 분석기의 "왜" 추론 깊이 부족:
+  Rule 엔진이 감지 → AI가 원인 설명 구조에서
+  TrendAnalyzer + AnomalyScorer로 도메인 지식 내재화 시작
+
+### 문서: 30개 전체 이상 없음
+### Validation: 19/19 + 20/20 Protocol PASS
