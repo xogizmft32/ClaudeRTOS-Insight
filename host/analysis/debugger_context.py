@@ -23,6 +23,14 @@ debugger_context.py — AI에 전달할 구조화 JSON 컨텍스트 빌더
 import json
 import time
 from typing import Optional, List, Dict, Any
+try:
+    from .trend_analyzer import (TrendAnalyzer, AnomalyScorer,
+                                  group_issues_by_root_cause,
+                                  enrich_context_with_analysis)
+except ImportError:
+    from trend_analyzer import (TrendAnalyzer, AnomalyScorer,
+                                 group_issues_by_root_cause,
+                                 enrich_context_with_analysis)
 
 
 # ── 이벤트 타입 이름 매핑 ─────────────────────────────────────
@@ -37,6 +45,21 @@ EVENT_TYPE_NAMES = {
     0x60: 'malloc',
     0x61: 'free',
 }
+
+
+# 세션 레벨 분석기 싱글턴 (모듈 import 시 초기화)
+_trend_analyzer: Optional[TrendAnalyzer]  = None
+_anomaly_scorer: Optional[AnomalyScorer]  = None
+
+def init_session_analyzers(
+        window: int = 10, z_threshold: float = 2.5,
+        sample_interval_s: float = 3.0) -> None:
+    """세션 시작 시 1회 호출. TrendAnalyzer/AnomalyScorer 초기화."""
+    global _trend_analyzer, _anomaly_scorer
+    _trend_analyzer = TrendAnalyzer(
+        window=window, sample_interval_s=sample_interval_s)
+    _anomaly_scorer = AnomalyScorer(
+        window=window * 2, z_threshold=z_threshold)
 
 
 def build_context(
@@ -168,6 +191,20 @@ def build_context(
     # ── crash ────────────────────────────────────────────────
     if fault:
         ctx['crash'] = _crash_entry(fault)
+
+    # ── AI 고도화: Trend + Anomaly + RootCause 컨텍스트 삽입 ──
+    if _trend_analyzer is not None and _anomaly_scorer is not None:
+        try:
+            _trend_analyzer.push(snap)
+            _anomaly_scorer.push(snap)
+            trend_r   = _trend_analyzer.analyze()
+            anomaly_r = _anomaly_scorer.score(snap)
+            issue_list = issues if issues else []
+            groups    = group_issues_by_root_cause(issue_list)
+            ctx       = enrich_context_with_analysis(
+                            ctx, trend_r, anomaly_r, groups)
+        except Exception:
+            pass  # 분석 실패해도 기본 context 반환
 
     # compact JSON — separators=(',',':') 으로 공백 제거
     return json.dumps(ctx, separators=(',', ':'), ensure_ascii=False)

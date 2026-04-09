@@ -35,7 +35,8 @@ from analysis.debugger_context import (
     context_token_estimate,
 )
 from .providers import create_provider, AIProvider, AITier, AIResponse
-from .response_cache import AIResponseCache
+from .response_cache       import AIResponseCache
+from .hallucination_guard  import HallucinationGuard
 from patterns.session_learner import SessionLearner
 from .providers.base import AITier
 
@@ -169,6 +170,7 @@ class RTOSDebuggerV3:
         else:
             self._provider = create_provider(provider, **provider_kwargs)
         self._cache   = AIResponseCache()
+        self._guard   = HallucinationGuard()
         self._learner = SessionLearner(
             confidence_threshold=0.80,
             min_occurrences=2,
@@ -247,7 +249,22 @@ class RTOSDebuggerV3:
                     self._learner.record(issues[0], pr)
                 except Exception:
                     pass   # 학습 실패는 무시
-        return resp.to_dict()
+        # Hallucination 검증 — raw_data 첨부
+        result = resp.to_dict()
+        if snap and issues:
+            notes = self._guard.verify(
+                result, snap, issues)
+            result['_verification'] = {
+                'notes':       [{
+                    'claim':  n.claim,
+                    'status': n.status,
+                    'detail': n.detail,
+                    'severity': n.severity,
+                } for n in notes],
+                'summary':     HallucinationGuard.summary(notes),
+                'raw_snapshot_keys': list(snap.keys()) if snap else [],
+            }
+        return result
 
     def analyze_fault(self,
                       fault:           Dict,

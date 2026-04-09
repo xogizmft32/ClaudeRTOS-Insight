@@ -454,6 +454,44 @@ class GlobalCausalGraph(CausalGraph):
         d['repeated_patterns'] = self.get_trends()[:5]
         return d
 
+
+    def propagate_confidence(self, decay: float = 0.85) -> None:
+        """
+        부모 노드의 confidence를 자식 노드에 전파 (감쇠 적용).
+
+        예: deadlock (conf=0.95) → stack_overflow (conf=0.95×0.85=0.81)
+        이미 높은 confidence면 유지. 낮은 경우만 상향.
+
+        decay: 전파 시 적용되는 감쇠 계수 (기본 0.85)
+        """
+        # CAUSES 엣지 따라 BFS
+        from collections import deque
+        queue: deque = deque()
+        # in-degree=0 루트 노드부터 시작
+        caused_ids = {e.to_id for e in self._edges if e.kind == EdgeKind.CAUSES}
+        for nid, node in self._nodes.items():
+            if nid not in caused_ids:
+                queue.append(nid)
+
+        visited = set()
+        while queue:
+            nid = queue.popleft()
+            if nid in visited:
+                continue
+            visited.add(nid)
+            parent = self._nodes.get(nid)
+            if parent is None:
+                continue
+            for edge in self._edges:
+                if edge.from_id == nid and edge.kind == EdgeKind.CAUSES:
+                    child = self._nodes.get(edge.to_id)
+                    if child is not None:
+                        propagated = parent.confidence * decay
+                        if propagated > child.confidence:
+                            child.confidence = round(
+                                min(propagated, 0.95), 3)
+                    queue.append(edge.to_id)
+
     def reset(self) -> None:
         """세션 종료 시 리셋."""
         self._nodes.clear()

@@ -1034,3 +1034,66 @@ debugger = RTOSDebuggerV3(
 
 ### 문서: 30개 전체 이상 없음
 ### Validation: 19/19 + 20/20 Protocol PASS
+
+## [4.9.0] — 2026-04-09 ✅ PRODUCTION READY
+
+### 1. AI 분석기 고도화 (미구현 항목 완성)
+
+**TrendAnalyzer → build_context() 자동 통합** (`host/analysis/debugger_context.py`)
+- `init_session_analyzers()` 세션 시작 시 1회 호출
+- `build_context()` 내부에서 스냅샷 자동 push → trend/anomaly 계산
+- AI 컨텍스트에 `analysis.trends`, `analysis.anomalies`,
+  `analysis.root_cause_groups` 자동 삽입
+- 예: `"CPU 88% → +2.33%/s 상승, 포화까지 5초"` AI에게 직접 전달
+
+**Confidence Propagation** (`host/analysis/causal_graph.py`)
+- `propagate_confidence(decay=0.85)`: CAUSES 엣지를 따라 부모→자식 전파
+- deadlock(conf=0.95) → stack_overflow 자동 상향 (0.40→0.81)
+- BFS 순회, 이미 높은 conf는 유지
+
+**Few-shot Injector** (`host/analysis/few_shot_injector.py`)
+- 과거 해결된 세션 로그에서 유사 사례 자동 탐색
+- `find_similar(issues)`: issue_type/severity 점수 기반 Top-N 반환
+- `add_example()`: 수동 사례 추가
+- AI 컨텍스트 `few_shot_examples`에 삽입 가능
+
+### 2. Hallucination Guard (`host/ai/hallucination_guard.py`)
+- AI 응답 주장을 실제 스냅샷 데이터와 자동 대조 검증
+  - 태스크명 존재 여부 (스냅샷 내 실제 태스크 확인)
+  - 수치 주장 검증 (hwm, cpu% ±5% 허용 오차)
+  - 이슈 타입 Rule 엔진 결과 대조 (카테고리 매핑 포함)
+- `VerificationNote`: claim/status/actual/detail/severity
+- `HallucinationGuard.summary()`: trust_score (0.0~1.0)
+- `format_for_report()`: 검증 결과 Markdown 표
+- `RTOSDebuggerV3.debug_snapshot()`: `_verification` 딕셔너리 자동 첨부
+  - `notes`: 검증 항목 리스트
+  - `summary.trust_score`: AI 신뢰도 점수
+
+### 3. Haisenbug 방지 가이드 (`docs/HEISENBUG_GUIDE.md`)
+- 현재 구현의 하이젠버그 방지 요소 (lock-free, ITM 비동기, DWT)
+- 여전히 발생 가능한 상황과 대응:
+  - ITM FIFO 가득 참 → SWO 속도 설정
+  - 링 버퍼 오버플로 → TRACE_RING_SIZE 증가
+  - MonitorTask 우선순위 경합 → tskIDLE_PRIORITY+1
+  - CYCCNT wrap-around → TimeNormalizer 기준점
+- 하이젠버그 체크리스트 (PROFILE_LITE → 완전 비활성 순)
+- 임베디드 하이젠버그 주요 패턴 표
+
+### 4. Single-file Binary 배포 (`claudertos.spec` + `build_binary.sh`)
+- `claudertos.spec`: PyInstaller 스펙 (onefile=True, patterns 포함)
+- `host/claudertos_main.py`: CLI 진입점
+  - `--validate`, `--port`, `--ai-mode`, `--profile`, `--report`
+  - `--mask-level`, `--provider` 인자
+- `build_binary.sh`: 로컬 또는 `--docker` Docker 빌드
+- 결과: `dist/claudertos` (단일 실행 파일, Python 불필요)
+
+### 배포 방식 비교
+
+| 방식 | 특징 | 권장 환경 |
+|------|------|---------|
+| Python 직접 | 소스 수정 가능 | 개발자 |
+| Docker | 환경 완전 고정 | 팀 배포 |
+| PyInstaller | Python 불필요, 단일 파일 | 현장 배포 |
+
+### Validation: 15/15 + 20/20 Protocol PASS
+### 문서: 31개 전체 이상 없음

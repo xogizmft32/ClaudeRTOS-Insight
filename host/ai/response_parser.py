@@ -132,6 +132,13 @@ class ParsedResponse:
     session_summary:     str     = ''
     overall_confidence:  float   = 0.5
     raw_text:            str     = ''
+
+    # ── Hallucination 대응: AI 응답 검증용 원본 데이터 ──
+    # AI 분석 결과가 실제 데이터와 일치하는지 엔지니어가
+    # 직접 확인할 수 있도록 원본 스냅샷을 함께 첨부
+    raw_snapshot:        dict    = dataclasses.field(default=None)  # AI에 전달된 실제 스냅샷 데이터
+    raw_timeline_events: list   = dataclasses.field(default=None)  # AI에 전달된 실제 이벤트 목록
+    verification_notes:  list   = dataclasses.field(default=None)  # 자동 검증 결과
     parse_success:       bool    = True
     parse_errors:        List[str] = field(default_factory=list)
 
