@@ -1097,3 +1097,33 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 15/15 + 20/20 Protocol PASS
 ### 문서: 31개 전체 이상 없음
+
+## [4.9.1] — 2026-04-09 ✅ PRODUCTION READY
+
+### README.md 전면 재작성 + 문서 구조 정비
+
+**README.md (v4.2.0 → v4.9.0 동기화)**
+- 버전 배지: 4.2.0 → 4.9.0
+- 파이프라인: [1]~[12] → [1]~[18] (trend_analyzer, few_shot_injector, hallucination_guard 추가)
+- 주요 기능 표: 기존 10개 → 17개 (Trend Analyzer, Anomaly Scorer, Hallucination Guard, Session Logger, Debug Report, Peripheral Monitor 추가)
+- 파일 구조: 신규 파일 전체 반영
+- 버전 이력: 4.2.0 단일 → v2.3~v4.9.0 전체 CHANGELOG 링크
+- About 섹션: 바이브 코딩 → AI 보조 설계(AI-Assisted Design) 완전 반영
+
+**📚 문서 목록 섹션 신설 (README 내)**
+- 기존: docs/ 링크 9개 (전체 29개 중 20개 미등록)
+- 이후: 전체 29개 문서 7개 카테고리로 분류 등록
+  - 🚀 시작하기 (4개)
+  - ⚙️ 펌웨어 설정 (6개)
+  - 🤖 AI 분석 (5개)
+  - 🏗️ 아키텍처 참조 (4개)
+  - 🌐 운용 환경 (2개)
+  - 🔒 품질/안전성 (4개)
+  - ✅ 테스트/검증 (2개)
+  - 📋 이력/기타 (2개)
+
+**DOCUMENT_INDEX.md 업데이트**
+- 31개 문서 전체 반영 (커버리지 확인 표 포함)
+
+### Validation: 20/20 Protocol PASS
+### 문서: README 29개 링크 전체 유효, 깨진 링크 없음

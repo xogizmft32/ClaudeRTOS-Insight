@@ -1,227 +1,300 @@
 # ClaudeRTOS-Insight
 
-**AI-assisted FreeRTOS/STM32 Real-Time Debugging System**
+**AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-4.2.0-blue.svg)](https://github.com/xogizmft32/ClaudeRTOS-Insight)
+[![Version](https://img.shields.io/badge/version-4.9.0-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Built with AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted--Design-blue.svg)](#about-ai-assisted-design)
+[![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](.python-version)
 
 ---
 
-## 🎵 About AI-Assisted Design
+## 🤖 About AI-Assisted Design
 
-이 프로젝트는 **AI 보조 설계(AI-Assisted Design)** 방식으로 시작되었습니다.
-
-AI 보조 설계은 2025년 OpenAI 공동창업자 Andrej Karpathy가 제안한 개발 패러다임으로,
-자연어로 의도를 설명하면 AI가 코드를 생성하고, 개발자는 방향성과 품질을 검토하는
-인간-AI 협업 방식입니다.
-
-이 프로젝트에서는 임베디드 시스템 도메인 지식과 AI의 코드 생성 능력을 결합해서
-FreeRTOS/STM32 디버깅 시스템을 반복적으로 설계하고 구현했습니다.
+이 프로젝트는 **AI 보조 설계(AI-Assisted Design)** 방법론으로 개발됐습니다.
+CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 전문가가 방향과 품질을 주도합니다.
 
 ```
-개발 방식:
-  사람  → 도메인 지식, 아키텍처 방향, 품질 검토
-  AI    → 코드 생성, 검증, 문서화, 리팩토링
-  결과  → v2.3 → v3.x → , 99개 파일, 20/20 검증 통과
+사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
+AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
+결과  → v2.3 → v4.9.0, 135개 파일, 20/20 검증 통과
 ```
 
-> "The hottest new programming language is English." — Andrej Karpathy
+---
+
+## 개요
+
+FreeRTOS/STM32 임베디드 시스템을 위한 AI 기반 실시간 디버깅 시스템.
+
+- **펌웨어**: STM32 Nucleo-F446RE (Cortex-M4, 180MHz) — OS 상태·이벤트 수집
+- **호스트**: 다단계 로컬 분석 파이프라인 + 선택적 AI 심층 분석
+- **비용**: postmortem 모드 ~$0.0085/이슈, Ollama 사용 시 $0
+- **오버헤드**: 0.028% CPU, 4KB RAM (PROFILE_STANDARD 기준)
+
+**→ 10분 도입 가이드: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**
 
 ---
 
-## Overview
-
-ClaudeRTOS-Insight는 FreeRTOS/STM32 임베디드 시스템을 위한 AI 기반 실시간 디버깅 시스템입니다.
-
-- **펌웨어**: STM32 Nucleo-F446RE (Cortex-M4, 180MHz)에서 OS 상태·이벤트 수집
-- **호스트**: N100 PC에서 다단계 로컬 분석 + 선택적 AI 심층 분석
-- **비용**: postmortem 모드 기준 ~$0.015/이슈, Ollama 사용 시 $0
-
----
-
-## Key Features
+## 주요 기능
 
 | 기능 | 내용 |
 |------|------|
-| **Trace V2** | Lock-free ring buffer (LDREX/STREX), DWT CYCCNT/EXCCNT, 0.028% CPU |
-| **Time Normalizer** | CYCCNT cycles / RTOS tick / packet ts → 통합 µs 타임라인 |
-| **Event Priority Queue** | CRITICAL(즉시)/HIGH/MEDIUM/LOW 호스트 분석 우선순위 |
-| **Resource Graph** | Mutex hold/wait DAG, Deadlock cycle DFS 탐지 |
-| **State Machine** | Task 상태 전이 추적, 장기 Blocked/Starvation 감지 |
-| **Causal Graph** | DAG 기반 multi-root cause 인과관계 분석 |
-| **Orchestrator** | Rule + Pattern + Graph + LLM 통합, 교차 검증 |
-| **AI Provider** | Anthropic/OpenAI/Google/Ollama 1줄 교체 |
-| **Pattern DB** | KP-001~005 JSON 선언적 패턴, Few-shot 학습 |
 | **Binary Protocol V4** | WIRE_PUT 매크로, endian 명시, V3 하위 호환 |
+| **Trace V2** | lock-free ring buffer (LDREX/STREX), DWT CYCCNT/EXCCNT |
+| **Time Normalizer** | CYCCNT/tick/packet → 통합 µs, wrap-around 자동 보정 |
+| **Event Priority Queue** | CRITICAL 즉시/HIGH/MEDIUM/LOW, Aging + Rate Limiting |
+| **Correlation Engine** | CORR-001~006, evidence 기반 confidence |
+| **Resource Graph** | Mutex hold/wait DAG, Deadlock cycle DFS 탐지 |
+| **State Machine** | SM-001~003, 장기 Blocked/Starvation 감지 |
+| **Causal Graph** | GlobalCausalGraph 세션 누산 DAG, 의미 기반 자동 연결 |
+| **Orchestrator** | Rule+Pattern+Graph+LLM 통합, 교차 검증 (+0.12) |
+| **AI Provider** | Anthropic/OpenAI/Google/Ollama 환경 변수 1줄 교체 |
+| **Pattern DB** | KP-001~005 JSON, Few-shot 학습, Session Learner |
+| **Context Masker** | 4단계 민감 정보 마스킹 + 프로젝트별 금지 목록 |
+| **Trend Analyzer** | CPU/Heap 슬로프 분석, 포화·고갈 예측 |
+| **Anomaly Scorer** | Z-score 기반 이상 수치화 |
+| **Hallucination Guard** | AI 응답 주장 vs 실제 데이터 자동 대조 검증 |
+| **Session Logger** | .log / .jsonl / .csv 구조화 로깅 |
+| **Debug Report** | 세션 결과 Markdown 자동 보고서 생성 |
+| **Peripheral Monitor** | GPIO 글리치, I2C NACK/Timeout 감지 |
 
 ---
 
-## Quick Start
+## 빠른 시작
 
 ```bash
-# 설치
-tar -xzf ClaudeRTOS-Insight--FINAL.tar.gz
+# 압축 해제 + 의존성 설치
+tar -xzf ClaudeRTOS-Insight-v4.9.0-FINAL.tar.gz
 cd ClaudeRTOS-Insight-v2.5.0
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r host/requirements.txt
+
+# 내 프로젝트에 통합
 python3 install.py --project /path/to/my_stm32_project
 
-# 검증 (하드웨어 불필요)
+# 검증 (하드웨어 불필요, 1분)
 python3 examples/integrated_demo.py --validate
 
-# 호스트 연결 (기본: Anthropic Claude)
+# 실제 연결
 export ANTHROPIC_API_KEY=sk-ant-...
-python3 examples/integrated_demo.py --port jlink
+python3 examples/integrated_demo.py --port jlink            # J-Link ITM
+python3 examples/integrated_demo.py --port uart:/dev/ttyUSB0  # UART
+python3 examples/integrated_demo.py --ai-mode offline       # AI 없이 로컬만
+```
 
-# 다른 AI 사용 (코드 변경 없이)
-export CLAUDERTOS_AI_PROVIDER=openai   # GPT-4o
-export CLAUDERTOS_AI_PROVIDER=ollama   # 로컬, 비용 $0
-python3 examples/integrated_demo.py --port jlink
+**→ 상세: [docs/QUICKSTART_COMPLETE_ko.md](docs/QUICKSTART_COMPLETE_ko.md)**
+
+---
+
+## 빌드 모드 & 프로파일
+
+```makefile
+make RELEASE=1               # Zero footprint — trace 코드 전체 제거 (릴리즈 빌드)
+make DEBUG=1 PROFILE=LITE    # 저사양 — STAT 모드, 28B RAM, offline AI
+make DEBUG=1                 # STANDARD — 기본, 4KB RAM, postmortem AI
+make DEBUG=1 PROFILE=EXPERT  # 고사양 — 8KB RAM, realtime AI
 ```
 
 ---
 
-## Analysis Pipeline ()
+## 분석 파이프라인
 
 ```
-STM32 Firmware (180MHz)
-  └── Binary Protocol V4 (ITM/UART)
-         │
+STM32 Firmware (Cortex-M4 @ 180MHz)
+  ├─ TraceEvents V2  (lock-free LDREX/STREX, DWT CYCCNT/EXCCNT)
+  └─ Binary Protocol V4  →  ITM(SWO) or UART
+
 Host Analysis Pipeline
-  ├─ [1] binary_parser        V3/V4 패킷 파싱
-  ├─ [2] time_normalizer      CYCCNT / tick / packet ts → 통합 µs  ★NEW
-  ├─ [3] analyzer             Rule-based 이슈 감지 (<1ms)
-  ├─ [4] event_queue          우선순위별 분석 라우팅             ★NEW
-  ├─ [5] prefilter            PatternDB KP 매칭 ($0)
-  │       └─ ConstraintChecker  temporal/pair/monotonic
-  ├─ [6] correlation_engine   CORR-001~006 (evidence 기반 confidence)
-  ├─ [7] state_machine        SM-001~003 상태 전이 추적
-  ├─ [8] resource_graph       RG-001~002 Mutex DAG + Deadlock DFS
-  ├─ [9] orchestrator         결과 통합 + 교차 검증 (+0.12)
-  ├─ [10] causal_graph        DAG multi-root cause 분석           ★NEW
-  ├─ [11] token_optimizer     컨텍스트 압축
-  └─ [12] AI Provider         Cloud or Local LLM
-           anthropic / openai / google / ollama
-```
+  [1]  collector          ITM/UART 수신
+  [2]  binary_parser      V3/V4 파싱, CRC, seq gap 감지
+  [3]  time_normalizer    CYCCNT/tick → 통합 µs
+  [4]  replay             PacketRecorder / SessionReplayer
+  [5]  analyzer           Rule-based 이슈 감지 (<1ms)
+  [6]  event_queue        CRITICAL즉시/HIGH/MEDIUM/LOW
+  [7]  prefilter          PatternDB KP 매칭 ($0)
+  [8]  correlation_engine CORR-001~006
+  [9]  state_machine      SM-001~003 상태 전이
+  [10] resource_graph     RG-001~002 데드락 DFS
+  [11] orchestrator       통합 + 교차검증
+  [12] causal_graph       GlobalCausalGraph DAG
+  [13] trend_analyzer     CPU/Heap 슬로프 + 이상 점수
+  [14] token_optimizer    컨텍스트 압축
+  [15] context_masker     민감 정보 마스킹
+  [16] few_shot_injector  과거 유사 사례 주입
+  [17] AI Provider        Cloud or Local LLM
+  [18] hallucination_guard AI 주장 vs 실제 데이터 검증
 
-**로컬 분석 전체: < 1ms** — AI는 필요할 때만 호출
-
----
-
-## Context Structure ()
-
-```json
-{
-  "session":    {"cpu_hz": 180000000, "isr": {...}},
-  "system":     {"cpu_pct": 88, "heap": {...}},
-  "tasks":      [...],
-  "events":     [...],
-  "resources":  {"mutex_holds": {...}, "mutex_waits": {...}},
-  "anomalies":  [...],
-  "candidates": [{"id":"RG-001","cross_validated":true,...}]
-}
+로컬 분석 전체: < 1ms — AI는 필요할 때만 호출
 ```
 
 ---
 
-## AI Provider 교체
+## AI Provider
 
-```python
-# 환경 변수 (코드 변경 없음)
-export CLAUDERTOS_AI_PROVIDER=openai
-export CLAUDERTOS_AI_PROVIDER=ollama   # $0
-
-# 코드에서
-debugger = RTOSDebuggerV3(provider='google')
-debugger = RTOSDebuggerV3(
-    provider='openai_compat',
-    base_url='https://api.together.xyz/v1',
-    tier1_model='meta-llama/Llama-3.1-70B-Instruct',
-)
+```bash
+export CLAUDERTOS_AI_PROVIDER=anthropic   # 기본 (Claude Sonnet)
+export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
+export CLAUDERTOS_AI_PROVIDER=google      # Gemini Pro
+export CLAUDERTOS_AI_PROVIDER=ollama      # 로컬, 비용 $0
 ```
 
-| Provider | Tier1 | Tier2 | 비용/이슈 |
-|----------|-------|-------|----------|
-| anthropic | claude-sonnet-4-6 | claude-haiku-4-5 | ~$0.0085 |
-| openai | gpt-4o | gpt-4o-mini | ~$0.0072 |
-| google | gemini-1.5-pro | gemini-1.5-flash | ~$0.0060 |
-| ollama | llama3.1:8b | qwen2.5:3b | **$0** |
+| Provider | 비용/이슈 | 특징 |
+|----------|----------|------|
+| anthropic | ~$0.0085 | 임베디드 도메인 최고 품질 |
+| openai | ~$0.0072 | 균형형 |
+| google | ~$0.0060 | 저비용 |
+| ollama | **$0** | 로컬, 오프라인, llama3.1:8b 권장 |
 
 ---
 
-## File Structure
+## 보안 / 오프라인 환경
+
+```bash
+# 민감 정보 마스킹
+export CLAUDERTOS_MASK_LEVEL=names      # 태스크/Mutex 이름 익명화
+export CLAUDERTOS_MASK_LEVEL=addresses  # + 메모리 주소
+export CLAUDERTOS_MASK_LEVEL=strict     # + IRQ 번호
+
+# 완전 오프라인
+python3 examples/integrated_demo.py --port jlink --ai-mode offline
+```
+
+**→ 폐쇄망 운용: [docs/OFFLINE_GUIDE.md](docs/OFFLINE_GUIDE.md)**
+
+---
+
+## 배포 방식
+
+| 방식 | 명령 | 대상 환경 |
+|------|------|---------|
+| Python 직접 | `pip install -r host/requirements.txt` | 개발자 |
+| Docker | `docker-compose run --rm claudertos-host` | 팀 배포 |
+| Single Binary | `./build_binary.sh` → `dist/claudertos` | 현장 배포 (Python 불필요) |
+
+---
+
+## 파일 구조
 
 ```
 firmware/
-  core/       binary_protocol V4, trace_events V2, transport
-  modules/    os_monitor V3, event_classifier
-  port/       port.h, cortex_m4/, esp32/
-  examples/   demo/main.c, FreeRTOSConfig.h
+  core/              binary_protocol V4, trace_events V2, transport
+  modules/           os_monitor V3, event_classifier, adaptive_sampler
+    peripheral/      peripheral_monitor, gpio_monitor, i2c_monitor
+  port/              port.h, insight_port_os.h, cortex_m4/, esp32/
+  tests/             fault_injection (OS+Peripheral 8종)
 
 host/
-  ai/
-    providers/  base, anthropic, openai, google, ollama, factory
-    rtos_debugger.py   (provider-agnostic)
-    response_parser.py
-  analysis/
-    analyzer.py, debugger_context.py
-    time_normalizer.py  ★ 타임스탬프 통합
-    event_queue.py      ★ 호스트 우선순위 큐
-    correlation_engine.py, orchestrator.py
-    state_machine.py, resource_graph.py
-    causal_graph.py     ★ DAG 인과관계
-  local_analyzer/  prefilter, token_optimizer, local_llm
-  parsers/         binary_parser (V3/V4)
-  patterns/        known_patterns.json, pattern_db.py, session_learner.py
+  ai/                rtos_debugger, response_parser, response_cache
+    providers/       anthropic, openai, google, ollama
+    hallucination_guard.py
+  analysis/          analyzer, correlation_engine, state_machine
+                     resource_graph, orchestrator, causal_graph
+                     time_normalizer, event_queue, analysis_context
+                     alert_manager, context_masker, trend_analyzer
+                     few_shot_injector, resource_reporter
+                     session_logger, debug_report
+  patterns/          known_patterns.json, pattern_db.py, session_learner
+    peripheral/      gpio_patterns.json, i2c_patterns.json
+  replay.py          PacketRecorder + SessionReplayer
+  claudertos_main.py CLI 진입점 (PyInstaller용)
 
-docs/              EN + KO (_ko suffix) — 22개 문서
-install.py         자동 통합 설치기
+docs/               31개 문서 (→ 아래 문서 목록)
+claudertos.spec     PyInstaller 빌드 스펙
+build_binary.sh     Single-file binary 빌드 스크립트
+install.py          자동 통합 설치기
+Dockerfile          컨테이너 이미지
+docker-compose.yml  멀티컨테이너 (host + ollama + replay)
 ```
 
 ---
 
-## Version History
+## 📚 문서 목록
 
-| 버전 | 날짜 | 주요 변경 |
-|------|------|---------|
-| **4.2.0** | 2026-04-03 | TimeNormalizer, EventPriorityQueue, CausalGraph(DAG), Context 구조화 |
-| 4.1.0 | 2026-04-01 | Resource Graph(deadlock DFS), State Machine, Orchestrator, Confidence Calibration |
-| 4.0.0 | 2026-03-31 | AI Provider 추상화 (anthropic/openai/google/ollama), 문서 전면 개정 |
-| 3.9.1 | 2026-03-31 | Trace V2 (lock-free, DWT CYCCNT/EXCCNT, 0.028% CPU) |
-| 3.9.0 | 2026-03-29 | Pattern DB JSON, Binary Protocol V4, Causal Chain |
-| 3.8.0 | 2026-03-28 | AI 구조화 JSON 출력, Correlation Engine, 시나리오 분기 |
-| 3.7.0 | 2026-03-28 | Port Layer (Cortex-M4/ESP32), 로컬 분석기 |
+> 전체 인덱스: [docs/DOCUMENT_INDEX.md](docs/DOCUMENT_INDEX.md)
 
-전체 이력: [CHANGELOG.md](CHANGELOG.md)
+### 🚀 시작하기
 
----
-
-## Documentation
-
-| 문서 | 설명 |
+| 문서 | 내용 |
 |------|------|
-| [QUICKSTART_COMPLETE](docs/QUICKSTART_COMPLETE.md) / [ko](docs/QUICKSTART_COMPLETE_ko.md) | 설치~디버깅 전 과정 |
-| [AI_USAGE_GUIDE](docs/AI_USAGE_GUIDE.md) / [ko](docs/AI_USAGE_GUIDE_ko.md) | AI 모드·비용·Provider |
-| [TRACE_GUIDE](docs/TRACE_GUIDE.md) / [ko](docs/TRACE_GUIDE_ko.md) | Trace V2 상세 |
-| [SYSTEM_REVIEW](docs/SYSTEM_REVIEW.md) | 전체 아키텍처 |
-| [TESTING_GUIDE](docs/TESTING_GUIDE.md) | 테스트 방법 |
-| [WCET_ANALYSIS](docs/WCET_ANALYSIS.md) | 최악 실행 시간 |
+| [GETTING_STARTED.md](docs/GETTING_STARTED.md) | **10분 도입 가이드** — Nucleo-F446RE / 타 MCU |
+| [QUICKSTART_COMPLETE_ko.md](docs/QUICKSTART_COMPLETE_ko.md) | 한국어 전체 시작 가이드 |
+| [QUICKSTART_COMPLETE.md](docs/QUICKSTART_COMPLETE.md) | 영문 전체 시작 가이드 |
+| [QUICK_TROUBLESHOOTING.md](docs/QUICK_TROUBLESHOOTING.md) | 자주 발생하는 문제 해결 |
+
+### ⚙️ 펌웨어 설정
+
+| 문서 | 내용 |
+|------|------|
+| [TRACE_GUIDE_ko.md](docs/TRACE_GUIDE_ko.md) | Trace 설정, 카테고리 On/Off (한국어) |
+| [TRACE_GUIDE.md](docs/TRACE_GUIDE.md) | Trace 설정 (영문) |
+| [FREERTOS_HOOK_GUIDE.md](docs/FREERTOS_HOOK_GUIDE.md) | **FreeRTOS Hook / Trace Macro** 사용법 |
+| [TRANSPORT_GUIDE.md](docs/TRANSPORT_GUIDE.md) | **ITM vs UART** 비교, 설정, 전환 방법 |
+| [HEISENBUG_GUIDE.md](docs/HEISENBUG_GUIDE.md) | **하이젠버그 방지** — 관측 영향 최소화 |
+| [ITM_TROUBLESHOOTING.md](docs/ITM_TROUBLESHOOTING.md) | ITM/SWO 연결 문제 해결 |
+
+### 🤖 AI 분석
+
+| 문서 | 내용 |
+|------|------|
+| [AI_USAGE_GUIDE_ko.md](docs/AI_USAGE_GUIDE_ko.md) | AI 사용 흐름, 캐시, 비용 (한국어) |
+| [AI_USAGE_GUIDE.md](docs/AI_USAGE_GUIDE.md) | AI 사용 가이드 (영문) |
+| [LOCAL_AI_GUIDE.md](docs/LOCAL_AI_GUIDE.md) | **Ollama 로컬 AI** — 오프라인 AI 분석 |
+| [PATTERN_GUIDE_ko.md](docs/PATTERN_GUIDE_ko.md) | 패턴 DB 추가·수정·학습 (한국어) |
+| [PATTERN_GUIDE.md](docs/PATTERN_GUIDE.md) | Pattern DB 가이드 (영문) |
+
+### 🏗️ 아키텍처 참조
+
+| 문서 | 내용 |
+|------|------|
+| [SYSTEM_REVIEW.md](docs/SYSTEM_REVIEW.md) | **전체 파이프라인** 컴포넌트 상세 |
+| [WCET_ANALYSIS.md](docs/WCET_ANALYSIS.md) | CPU/RAM 오버헤드 추정치 |
+| [PRIORITY_BUFFER_ANALYSIS.md](docs/PRIORITY_BUFFER_ANALYSIS.md) | Priority Buffer 설계 분석 |
+| [CONCURRENCY_VERIFICATION.md](docs/CONCURRENCY_VERIFICATION.md) | 동시성 안전성 검증 |
+
+### 🌐 운용 환경
+
+| 문서 | 내용 |
+|------|------|
+| [OFFLINE_GUIDE.md](docs/OFFLINE_GUIDE.md) | **폐쇄망 / 오프라인** 운용, wheel 반입 |
+| [TEST_ENVIRONMENT.md](docs/TEST_ENVIRONMENT.md) | 테스트 환경 요구사항, 재현성 체크리스트 |
+
+### 🔒 품질 / 안전성
+
+| 문서 | 내용 |
+|------|------|
+| [MISRA_C_GUIDELINES.md](docs/MISRA_C_GUIDELINES.md) | MISRA C:2012 준수 현황, Known Deviations |
+| [FAULT_INJECTION_GUIDE.md](docs/FAULT_INJECTION_GUIDE.md) | Fault Injection (OS + Peripheral 8종) |
+| [SAFETY_AUDIT_SUMMARY.md](docs/SAFETY_AUDIT_SUMMARY.md) | 안전성 감사 요약 |
+| [SAFETY_DESIGN_GUIDELINES.md](docs/SAFETY_DESIGN_GUIDELINES.md) | 설계 안전성 지침 |
+
+### ✅ 테스트 / 검증
+
+| 문서 | 내용 |
+|------|------|
+| [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | 테스트 시나리오, 검증 방법 |
+| [TESTING_CHECKLIST.md](docs/TESTING_CHECKLIST.md) | 릴리즈 전 체크리스트 |
+
+### 📋 이력 / 기타
+
+| 문서 | 내용 |
+|------|------|
+| [CHANGELOG.md](CHANGELOG.md) | 전체 버전 이력 (v2.3 → v4.9.0) |
+| [BUGFIX_REPORT.md](docs/BUGFIX_REPORT.md) | 주요 버그 수정 기록 |
 
 ---
 
-## Validation
+## 검증 결과
 
 ```
 Protocol validation:    20/20 PASS
-Pipeline simulation:    7/7  PASS ( 신규)
-Analysis latency:       0.06ms/cycle (N100 47,563× headroom)
-AI cost (anthropic):    ~$0.0085/issue (Critical)
-AI cost (ollama):       $0
+전 과정 시뮬레이션:      19/19 PASS
+분석 파이프라인:         < 1.08ms/사이클 (N100 기준)
+AI context:             ~111 tokens
+Hallucination Guard:    AI 주장 vs 실제 데이터 자동 대조
 ```
 
 ---
 
-**Target:** STM32F446RE @ 180MHz  
-**RTOS:** FreeRTOS 10.0+  
-**Host:** N100 / Linux / Python 3.8+  
-**Started:** AI-Assisted Design with Claude (Anthropic)
+**타깃**: STM32F446RE (Cortex-M4, 180MHz) | **RTOS**: FreeRTOS 10.0+ | **호스트**: Python 3.11+  
+**전체 이력**: [CHANGELOG.md](CHANGELOG.md) | **개발**: AI 보조 설계 × Claude (Anthropic)
