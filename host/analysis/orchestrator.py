@@ -178,6 +178,10 @@ class Orchestrator:
         sev_order = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
         unified.sort(key=lambda r: (sev_order.get(r.severity, 3),
                                      -r.confidence))
+        # Confidence Propagation: Causal Graph를 통해
+        # 부모 이슈의 높은 confidence가 자식으로 전파
+        # (Orchestrator는 graph 없이 동작하므로 unified 리스트 내에서 처리)
+        unified = self._propagate_within_results(unified)
         return unified
 
     # ── 내부 헬퍼 ─────────────────────────────────────────────
@@ -206,6 +210,27 @@ class Orchestrator:
 
         return items
 
+
+    def _propagate_within_results(
+            self, results: List['UnifiedResult']) -> List['UnifiedResult']:
+        """
+        동일 세션 unified 결과 내에서 confidence 전파.
+        Critical 이슈가 같은 태스크의 다른 이슈 confidence를 소폭 상향.
+        (Causal Graph의 propagate_confidence() 경량 버전)
+        """
+        crit = [r for r in results if r.severity == 'Critical']
+        if not crit:
+            return results
+        crit_tasks = {t for r in crit
+                      for t in getattr(r, 'affected_tasks', [])}
+        crit_conf  = max(r.confidence for r in crit)
+        for r in results:
+            if r.severity in ('High', 'Medium'):
+                tasks = getattr(r, 'affected_tasks', [])
+                if any(t in crit_tasks for t in tasks):
+                    boost = min(crit_conf * 0.15, 0.10)
+                    r.confidence = min(0.95, r.confidence + boost)
+        return results
     def _deduplicate(self, items: List[UnifiedResult]) -> List[UnifiedResult]:
         """
         (affected_tasks, scenario, severity)가 같은 중복 항목 제거.

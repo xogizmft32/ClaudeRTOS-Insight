@@ -11,7 +11,7 @@
 | | |
 |--|--|
 | **위치** | `firmware/modules/os_monitor/os_monitor_binary_v2.c` |
-| **문제** | V4 priority buffer로 업그레이드 했음에도 `os_monitor_binary_v2.c`가 여전히 폐기된 `#include "priority_buffer.h"` (V1)를 참조 → V4의 안전성 보장이 실제로 적용되지 않음 |
+| **문제** | V4 priority buffer로 업그레이드 했음에도 `os_monitor_binary_v2.c`가 여전히 폐기된 `#include "priority_buffer.h"` (V1)를 참조 → V4의 안전성 개선이 실제로 적용되지 않음 |
 | **수정** | `os_monitor_v3.c` 신규 작성. `priority_buffer_v4.h` 사용, `PriorityBufferV4_Write()` 호출 |
 
 ---

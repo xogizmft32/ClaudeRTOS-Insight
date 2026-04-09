@@ -36,6 +36,13 @@ from analysis.debugger_context import (
 )
 from .providers import create_provider, AIProvider, AITier, AIResponse
 from .response_cache       import AIResponseCache
+try:
+    from ..analysis.resource_reporter import ResourceReporter as _RR
+except ImportError:
+    try:
+        from analysis.resource_reporter import ResourceReporter as _RR
+    except ImportError:
+        _RR = None
 from .hallucination_guard  import HallucinationGuard
 from patterns.session_learner import SessionLearner
 from .providers.base import AITier
@@ -169,7 +176,8 @@ class RTOSDebuggerV3:
             self._provider = ai_provider
         else:
             self._provider = create_provider(provider, **provider_kwargs)
-        self._cache   = AIResponseCache()
+        self._cache    = AIResponseCache()
+        self._reporter = _RR(cpu_hz=180_000_000) if _RR else None
         self._guard   = HallucinationGuard()
         self._learner = SessionLearner(
             confidence_threshold=0.80,
@@ -314,6 +322,13 @@ class RTOSDebuggerV3:
         Returns: 저장된 학습 패턴 수
         """
         self._cache.save()
+        if self._reporter is not None:
+            try:
+                import time as _t
+                rpt_path = f'resource_report_{_t.strftime("%Y%m%d_%H%M%S")}.md'
+                self._reporter.save_markdown(rpt_path)
+            except Exception:
+                pass
         candidates = self._learner.get_candidates()
         saved = self._learner.save_to_db(auto_save=auto_save)
         return len(saved)

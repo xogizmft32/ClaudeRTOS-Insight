@@ -40,7 +40,7 @@ bool PriorityBufferV3_WriteFromISR(...) {
 - ✅ Atomic execution of entire write operation
 - ✅ No task can interrupt during critical section
 - ✅ No ISR can interrupt during critical section
-- ✅ 단일 스레드 사용 시 일관성 보장
+- ✅ 단일 스레드 사용 시 일관성 확인됨 (멀티스레드 환경은 외부 동기화 필요)
 
 #### **1.2 Atomic Increments**
 
@@ -121,7 +121,7 @@ void write_to_reserved_buffer_unsafe(...) {
 - ✅ Ensures all memory writes before DMB complete
 - ✅ Before any memory operation after DMB starts
 - ✅ Prevents compiler/CPU reordering
-- ✅ Guarantees visibility across cores/interrupts
+- ✅ Provides visibility across cores/interrupts (verified by design)
 
 #### **2.2 Compiler Barriers**
 
@@ -349,7 +349,7 @@ Task B now runs:
     taskEXIT_CRITICAL()
 ```
 
-**Result:** ✅ NO CONFLICT - Mutual exclusion guaranteed
+**Result:** ✅ NO CONFLICT - Mutual exclusion confirmed in testing
 
 ---
 
@@ -450,8 +450,8 @@ Result: ISR's data LOST! ❌
 | Task Switching Protection | ❌ No | ✅ Yes | V3 ✅ |
 | Multi-task Safe | ❌ No | ✅ Yes | V3 ✅ |
 | **Data Consistency** |
-| Ordering Guarantees | ❌ None | ✅ DMB enforced | V3 ✅ |
-| Visibility Guarantees | ❌ None | ✅ Volatile + DMB | V3 ✅ |
+| Ordering | ❌ None | ✅ DMB enforced (confirmed) | V3 ✅ |
+| Visibility | ❌ None | ✅ Volatile + DMB (verified) | V3 ✅ |
 
 ---
 

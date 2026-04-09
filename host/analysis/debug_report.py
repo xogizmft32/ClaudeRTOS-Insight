@@ -29,6 +29,13 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+try:
+    from .session_logger import SessionLogger as _SL
+except ImportError:
+    try:
+        from session_logger import SessionLogger as _SL
+    except ImportError:
+        _SL = None
 from typing import Dict, List, Optional
 
 
@@ -283,6 +290,31 @@ class DebugReportGenerator:
         if not recs:
             recs.append("현재 세션에서 특이 사항 없음 — 다음 릴리즈 시 리소스 추이 재확인")
         return recs
+
+    def save_with_log(self, report_path: str,
+                       log_dir: str = 'logs') -> str:
+        """
+        보고서 저장 + SessionLogger JSONL에 보고서 생성 이벤트 기록.
+        SessionLogger와 DebugReportGenerator를 연동.
+        """
+        path = self.save(report_path)
+        if _SL is not None:
+            try:
+                logger = _SL(log_dir=log_dir,
+                             session_id=f'report_{self._sid}')
+                logger.start()
+                for iss in self._issues:
+                    logger.log_issue({
+                        'type': iss.issue_type,
+                        'severity': iss.severity,
+                        'affected_tasks': [iss.task_name],
+                        'description': iss.description,
+                    })
+                logger.log_alert(f'Report saved: {path}', 'info')
+                logger.stop()
+            except Exception:
+                pass
+        return path
 
     def save(self, path: str) -> str:
         """보고서를 파일로 저장. 저장된 경로 반환."""

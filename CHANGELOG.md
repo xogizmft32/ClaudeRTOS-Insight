@@ -169,7 +169,7 @@ python3 examples/integrated_demo.py --validate
 - **ITM-03**: 데이터 이중 경로 제거
   - V4 buffer + ITM 직접 전송 혼재 → `OSMonitorV3_GetData()` → `Transport_SendBinary()` 단일 경로
 - **ITM-04**: `ITM_SendChar()` 블로킹 while 루프 제거
-  - `TRANSPORT_ITM_TIMEOUT_CNT` 루프 카운트 타임아웃 도입 (WCET 보장)
+  - `TRANSPORT_ITM_TIMEOUT_CNT` 루프 카운트 타임아웃 도입 (WCET 상한 추정)
 - **ITM-05**: 포트 1,2 텍스트 오염 제거
   - 바이너리: Port 0 (CH_BINARY), 텍스트: Port 3 (CH_DIAG) 명확히 분리
 
@@ -1127,3 +1127,51 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 20/20 Protocol PASS
 ### 문서: README 29개 링크 전체 유효, 깨진 링크 없음
+
+## [4.9.2] — 2026-04-10 ✅ PRODUCTION READY
+
+### 1. '보장' 표현 전면 수정 (30개 문서)
+
+주장성 "보장" 표현을 책임 범위를 명확히 하는 표현으로 교체.
+
+| 변경 전 | 변경 후 | 적용 문서 |
+|---------|---------|---------|
+| Mutual exclusion guaranteed | Mutual exclusion confirmed in testing | CONCURRENCY_VERIFICATION |
+| Guarantees visibility across cores | Provides visibility (verified by design) | CONCURRENCY_VERIFICATION |
+| Ordering Guarantees | Ordering (confirmed) | CONCURRENCY_VERIFICATION |
+| guaranteed isolation | verified isolation (by design) | PRIORITY_BUFFER_ANALYSIS |
+| Key Guarantees | Key Design Properties | PRIORITY_BUFFER_ANALYSIS |
+| Mathematical Guarantee | Design Property (Mathematical Basis) | PRIORITY_BUFFER_ANALYSIS |
+| absolute guarantee | prioritized protection (effective until...) | PRIORITY_BUFFER_ANALYSIS |
+| WCET Guarantees | WCET Estimates (Measured estimates only) | SAFETY_AUDIT_SUMMARY |
+| WCET test < guarantee | WCET test within estimated bounds | TESTING_GUIDE |
+| WCET Guarantee | WCET Estimate | WCET_ANALYSIS |
+| 안전성 보장 | 안전성 개선 | BUGFIX_REPORT |
+| WCET 보장 | WCET 상한 추정 | CHANGELOG |
+
+### 2. AI 분석기 미비점 4가지 완성
+
+**① Few-shot → build_context() 자동 삽입** (`host/analysis/debugger_context.py`)
+- `FewShotInjector` import 및 세션 레벨 싱글턴 생성
+- `build_context()` 내부에서 `_few_shot.to_context()` 자동 호출
+- AI 컨텍스트 `analysis.few_shot_examples`에 유사 과거 사례 자동 포함
+
+**② DebugReport → SessionLogger 연동** (`host/analysis/debug_report.py`)
+- `save_with_log(report_path, log_dir)` 메서드 추가
+- 보고서 저장 + SessionLogger JSONL에 이슈/알림 이벤트 동시 기록
+
+**③ AlertManager → AnalysisContext 기본 연결** (`host/analysis/analysis_context.py`)
+- `AnalysisContext.__init__`에서 `AlertManager` 인스턴스 생성
+- `EventPriorityQueue(on_critical=self._alert.on_critical)` 자동 연결
+- CRITICAL 이벤트 → 즉시 콘솔 출력 (검증에서 확인)
+
+**④ Confidence Propagation → Orchestrator 통합** (`host/analysis/orchestrator.py`)
+- `_propagate_within_results()`: integrate() 반환 직전 실행
+- Critical 이슈가 같은 태스크의 High/Medium 이슈 confidence 소폭 상향 (최대 +0.10)
+- Causal Graph 없이 동작하는 경량 버전
+
+**⑤ ResourceReporter → save_session() 연동** (`host/ai/rtos_debugger.py`)
+- `save_session()` 호출 시 `resource_report_YYYYMMDD_HHMMSS.md` 자동 생성
+
+### Validation: 6/6 + 20/20 Protocol PASS
+### 문서: 31개 전체 이상 없음, 주장성 '보장' 표현 없음

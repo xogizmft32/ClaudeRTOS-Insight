@@ -232,7 +232,7 @@ python examples/monitor_72h.py --source jlink
 
 ### Firmware Tests
 
-- [ ] WCET test passes (all functions < guarantee)
+- [ ] WCET test passes (all functions within estimated bounds)
 - [ ] CRC32 verification (100% accuracy)
 - [ ] Rollover handling (tested at boundaries)
 - [ ] Buffer overflow (tested with full buffer)

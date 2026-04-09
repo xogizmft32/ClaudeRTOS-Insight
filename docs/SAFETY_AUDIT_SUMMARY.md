@@ -166,7 +166,7 @@ void HardFault_Handler(void) {
 | Check | Status | Severity | Issue |
 |-------|--------|----------|-------|
 | Watchdog Integration | ❌ FAIL | 🔴 CRITICAL | No watchdog |
-| WCET Guarantees | ⚠️ PARTIAL | 🟡 MAJOR | Estimated only |
+| WCET Estimates  | ⚠️ PARTIAL | 🟡 MAJOR | Measured estimates only, not certified |
 | Timeout Mechanisms | ❌ FAIL | 🟡 MAJOR | No timeouts |
 | ISR Response Time | ⚠️ PARTIAL | 🟡 MAJOR | Not measured |
 | Priority Assignment | ✅ PASS | - | Clear hierarchy |

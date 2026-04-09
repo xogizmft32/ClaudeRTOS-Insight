@@ -90,7 +90,7 @@ V1 Algorithm:
 
 ### Design Principle
 
-**Separate buffers with guaranteed isolation:**
+**Separate buffers with verified isolation (by design):**
 
 ```
 ┌─────────────────────────────────────────┐
@@ -103,7 +103,7 @@ V1 Algorithm:
 └─────────────────────────┴───────────────┘
 ```
 
-### Key Guarantees
+### Key Design Properties
 
 1. **Physical Separation**
    - CRITICAL events ONLY use reserved buffer
@@ -115,7 +115,7 @@ V1 Algorithm:
    if (priority == PRIORITY_CRITICAL) {
        // ALWAYS use reserved buffer
        // Isolated from normal buffer
-       // GUARANTEED space (until reserved full)
+       // Reserved space (available until reserved buffer is full)
        write_to_reserved_buffer(buf, data, len);
    }
    ```
@@ -132,7 +132,7 @@ V1 Algorithm:
 | Feature | V1 (Flawed) | V2 (Reserved Space) |
 |---------|-------------|---------------------|
 | **Architecture** | Single ring buffer + priority tracking | Dual buffer (80% normal + 20% reserved) |
-| **Critical Protection** | ❌ **NOT GUARANTEED** | ✅ **GUARANTEED** |
+| **Critical Protection** | ❌ **보호 없음** | ✅ **설계상 우선 처리** |
 | **Space Calculation** | ❌ Incorrect for middle drops | ✅ Always correct |
 | **Worst Case** | CRITICAL can fail | CRITICAL 우선 처리 (reserved buffer가 가득 차면 실패 가능) |
 | **Complexity** | High (packet tracking + compaction) | Low (simple separation) |
@@ -183,7 +183,7 @@ Result: CRITICAL EVENT PROTECTED ✅
 
 ## 💡 **Why V2 is Superior**
 
-### 1. Mathematical Guarantee
+### 1. Design Property (Mathematical Basis)
 
 **V1:**
 ```
@@ -386,13 +386,13 @@ PriorityBufferV2_GetStats(&buf, &low, &normal, &high, &critical);
 - Simple, deterministic
 - Mathematically provable
 
-*Guarantee holds until reserved buffer is full, which should never happen with proper sizing.
+*This property holds until reserved buffer is full, which should never happen with proper sizing.
 
 ### Recommendation
 
 **Immediately migrate to V2:**
 - V1 cannot provide critical event protection
-- V2 provides absolute guarantee
+- V2 provides prioritized protection (effective until reserved buffer is full)
 - API is identical (drop-in replacement)
 - Small performance difference (<5 µs)
 

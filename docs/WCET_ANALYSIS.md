@@ -282,7 +282,7 @@ void measure_wcet_CRC32(void) {
 
 ### Test Matrix
 
-| Function | Test Cases | Iterations | Max Measured | WCET Guarantee | Margin |
+| Function | Test Cases | Iterations | Max Measured | WCET Estimate | Margin |
 |----------|------------|------------|--------------|----------------|--------|
 | CRC32 (512B) | 10 | 10,000 | 37 µs | 60 µs | 62% |
 | DWT Timestamp | 5 | 100,000 | 0.75 µs | 2 µs | 167% |

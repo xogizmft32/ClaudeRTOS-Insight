@@ -168,7 +168,7 @@ tn.set_reference(uptime_ms=snap.uptime_ms, cyccnt=snap.timestamp_us)
    a) PROFILE_LITE로 오버헤드 최소화
    b) TRACE_SAMPLE_RATE 높임
    c) 버그가 타이밍 마진에 의존하는 설계 결함일 가능성 검토
-      (예: Mutex 없이 공유 자원 접근, ISR과 태스크 간 비원자적 읽기/쓰기)
+      (예: Mutex 없이 공유 자원 접근, ISR과 태스크 간 비원자적 읽기/쓰기 — 동작은 구현과 컴파일러에 따라 다를 수 있음)
 ```
 
 ---

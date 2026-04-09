@@ -47,6 +47,7 @@ class CausalNode:
     occurrence_count: int = 1   # 반복 발생 횟수 (v2 추가)
     first_seen_us:   int = 0    # 최초 발생 (v2 추가)
     category:        str = 'general'   # memory/timing/deadlock/general
+    context_type:    str = 'task'       # 'task' | 'isr' | 'scheduler'
 
     def merge(self, other: 'CausalNode') -> None:
         """동일 노드 반복 발생 시 병합."""
