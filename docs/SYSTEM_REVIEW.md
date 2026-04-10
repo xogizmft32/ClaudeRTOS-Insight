@@ -324,3 +324,116 @@ make DEBUG=1 PROFILE=EXPERT # 고사양 (8KB, realtime AI)
 ### 관련 문서
 - `docs/TRANSPORT_GUIDE.md`: ITM vs UART 비교·설정·한계
 - `docs/OFFLINE_GUIDE.md`: 폐쇄망 운용·wheel 반입·Docker
+
+---
+
+## ~v4.9 추가 컴포넌트
+
+### TrendAnalyzer + AnomalyScorer (`host/analysis/trend_analyzer.py`)
+
+AI 컨텍스트에 시계열 이상 정보를 자동 삽입해 분석 품질을 높인다.
+
+```python
+# build_context() 내부에서 자동 실행 — 별도 호출 불필요
+init_session_analyzers(window=10, z_threshold=2.5)
+
+# AI에 전달되는 추가 정보 예시
+"analysis": {
+  "trends": {
+    "cpu": {"slope_per_s": 2.33, "anomaly": true,
+            "description": "CPU 88% → +2.33%/s, 포화까지 5초",
+            "saturation_s": 5.1}
+  },
+  "anomalies": {"cpu": {"z_score": 3.2, "anomaly": true}},
+  "root_cause_groups": {"memory_pressure": ["stack_overflow_imminent", "heap_exhaustion"]}
+}
+```
+
+- `TrendAnalyzer`: 슬라이딩 윈도우 기반 선형 회귀 (numpy 또는 순수 Python 폴백)
+- `AnomalyScorer`: Z-score 기반 이상 수치화 (binary 임계값 대신 "3.2σ")
+- `group_issues_by_root_cause()`: 동일 근본 원인 이슈 그룹화
+- `enrich_context_with_analysis()`: 위 세 결과를 AI 컨텍스트에 삽입
+
+### HallucinationGuard (`host/ai/hallucination_guard.py`)
+
+AI 응답의 주장을 실제 스냅샷 데이터와 자동 대조 검증.
+
+```python
+# RTOSDebuggerV3.debug_snapshot() 응답에 자동 첨부
+result['_verification'] = {
+    'notes': [
+        {'claim': "task 'HighTask' 존재", 'status': 'verified', ...},
+        {'claim': "HighTask stack_hwm=14W", 'status': 'verified', ...},
+        {'claim': "이슈 타입 'stack_overflow_imminent'", 'status': 'verified', ...},
+    ],
+    'summary': {'trust_score': 1.0, 'mismatches': 0, 'total': 3},
+}
+```
+
+검증 항목:
+- 태스크명 존재 여부 (스냅샷 실제 태스크 대조)
+- 수치 주장 (hwm, cpu% ±5% 허용 오차)
+- 이슈 타입 (Rule 엔진 결과 대조, 카테고리 매핑 포함)
+
+### Few-shot Injector (`host/analysis/few_shot_injector.py`)
+
+과거 세션 로그에서 유사 사례를 찾아 AI 컨텍스트에 자동 포함.
+
+```python
+# build_context() 내부에서 자동 실행
+# logs/*.jsonl → 유사 issue_type 검색 → few_shot_examples 삽입
+"analysis": {
+  "few_shot_examples": {
+    "count": 1,
+    "examples": [{"issue_type": "stack_overflow_imminent",
+                  "summary": "스택 256→512W 증가로 해결", "resolved": true}]
+  }
+}
+```
+
+수동 사례 추가: `FewShotInjector.add_example(issue_type, summary, resolved=True)`
+
+### Confidence Propagation
+
+**Causal Graph 수준** (`host/analysis/causal_graph.py`):
+- `GlobalCausalGraph.propagate_confidence(decay=0.85)`
+- CAUSES 엣지를 따라 부모 confidence가 자식에 전파 (BFS)
+- deadlock(conf=0.95) → CAUSES → stack_overflow → 자동 상향
+
+**Orchestrator 수준** (`host/analysis/orchestrator.py`):
+- `_propagate_within_results()`: Critical 이슈 감지 시 같은 태스크의 High/Medium 이슈 소폭 상향 (최대 +0.10)
+- Causal Graph 없이 동작하는 경량 버전
+
+### DebugReport + SessionLogger 연동 (`host/analysis/debug_report.py`)
+
+```python
+gen = DebugReportGenerator(project_name="MyProject", cpu_hz=180_000_000)
+# 세션 중: gen.add_snapshot(snap), gen.add_issue(issue), gen.add_ai_result(ai)
+# 세션 종료:
+path = gen.save_with_log("report.md", log_dir="logs/")
+# → report.md 생성 + logs/session_*.jsonl에 이벤트 기록
+```
+
+보고서 포함 내용:
+- 세션 요약, 이슈 상세 (인과 체인 + 수정 코드), 리소스 추이 ASCII, Mermaid 다이어그램, 미해결 체크리스트
+
+### SecretsConfig (`host/analysis/context_masker.py`)
+
+프로젝트별 금지 변수 목록으로 AI 접근 강제 차단.
+
+```bash
+# 프로젝트 루트에 .claudertos_secrets.json 생성
+SecretsConfig.create_template(".claudertos_secrets.json")
+export CLAUDERTOS_SECRETS_FILE=.claudertos_secrets.json
+```
+
+```json
+{
+  "forbidden_task_names":     ["PaymentTask", "SecureTask"],
+  "forbidden_keys":           ["device_key", "session_id"],
+  "forbidden_value_patterns": ["^sk-", "^Bearer "],
+  "replacement":              "***REDACTED***"
+}
+```
+
+MaskLevel.NONE이어도 secrets 목록은 항상 차단. ContextMasker 레벨과 독립 동작.

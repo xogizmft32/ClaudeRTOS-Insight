@@ -1175,3 +1175,39 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 6/6 + 20/20 Protocol PASS
 ### 문서: 31개 전체 이상 없음, 주장성 '보장' 표현 없음
+
+## [4.9.3] — 2026-04-10 ✅ PRODUCTION READY
+
+### 전체 구조 미비점 수정
+
+**B. AnalysisContext ← TrendAnalyzer 연동** (`host/analysis/analysis_context.py`)
+- `TrendAnalyzer`, `AnomalyScorer` import 및 `__init__` 초기화
+- `run()` 내부에서 스냅샷 push 자동 처리
+- AnalysisContext 레벨에서도 시계열 추세 누산
+
+**C. install.py v4.0 업데이트** (신규 파일 전체 반영)
+- `PERIPHERAL_FILES`: gpio_monitor, i2c_monitor, peripheral_monitor 추가
+- `PORT_FILES`: insight_port_os.h + freertos/insight_port_os.c 추가
+- `BUILD_MODE_FLAGS`, `PROFILE_FLAGS`: 빌드 옵션 상수 추가
+- `--profile LITE|STANDARD|EXPERT` CLI 옵션 추가
+- `--peripheral` CLI 옵션 추가 (GPIO/I2C 모니터 선택 설치)
+
+**D. README.md 완전 갱신** (v4.9.2 기준)
+- 버전 배지: 4.9.2
+- 파이프라인: [18]단계 (Confidence Propagation, Few-shot, Hallucination Guard 추가)
+- 주요 기능 표: 22개 (v4.2.0 대비 12개 신규)
+- 추정치 명시: CPU/RAM 오버헤드 "(추정치)" 명기
+- 주장성 '보장' 표현 없음
+- 문서 링크: 29개 전체 등록, 깨진 링크 없음
+
+**SYSTEM_REVIEW.md 신규 기능 5개 추가**
+- TrendAnalyzer + AnomalyScorer
+- HallucinationGuard
+- Few-shot Injector
+- Confidence Propagation (Causal Graph + Orchestrator)
+- DebugReport + SessionLogger 연동
+- SecretsConfig (프로젝트별 금지 목록)
+
+### Validation: 22/22 항목 + 20/20 Protocol PASS
+### 문서: 31개 전체 이상 없음
+### README: v4.9.2 완전 동기화, docs/ 29개 링크 전체 등록

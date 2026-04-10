@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClaudeRTOS-Insight Installer v3.3
+ClaudeRTOS-Insight Installer v4.0
 
 사용자 FreeRTOS 프로젝트에 ClaudeRTOS-Insight를 자동으로 통합합니다.
 
@@ -58,7 +58,34 @@ OS_MONITOR_FILES = [
     "os_monitor/os_monitor_v3.h",
 ]
 
+# 페리페럴 모니터 (선택, 필요한 것만 복사)
+PERIPHERAL_FILES = [
+    "peripheral/peripheral_monitor.c",
+    "peripheral/peripheral_monitor.h",
+    "peripheral/gpio_monitor.c",
+    "peripheral/gpio_monitor.h",
+    "peripheral/i2c_monitor.h",
+    "peripheral/i2c_monitor.c",
+]
+
+# OS 추상화 포트 파일
+PORT_FILES = [
+    "port/insight_port_os.h",
+    "port/freertos/insight_port_os.c",
+]
+
 # ── FreeRTOSConfig.h에 추가해야 할 설정 ─────────────────────
+# 빌드 모드 매크로 (Makefile/CMake에 추가)
+BUILD_MODE_FLAGS = {
+    'debug':   '-DCLAUDERTOS_BUILD_MODE=BUILD_DEBUG',
+    'release': '-DCLAUDERTOS_BUILD_MODE=BUILD_RELEASE',
+}
+PROFILE_FLAGS = {
+    'LITE':     '-DCLAUDERTOS_PROFILE=PROFILE_LITE',
+    'STANDARD': '-DCLAUDERTOS_PROFILE=PROFILE_STANDARD',
+    'EXPERT':   '-DCLAUDERTOS_PROFILE=PROFILE_EXPERT',
+}
+
 FREERTOS_REQUIRED = {
     "configGENERATE_RUN_TIME_STATS":        "1",
     "configUSE_TRACE_FACILITY":             "1",
@@ -463,6 +490,12 @@ def main():
               python3 install.py --uninstall /path/to/myproject 제거
         """))
     ap.add_argument("--project",    default=None, help="대상 프로젝트 루트 경로")
+    ap.add_argument("--profile",
+        choices=["LITE","STANDARD","EXPERT"], default="STANDARD",
+        help="디버깅 프로파일 (기본: STANDARD)")
+    ap.add_argument("--peripheral",
+        action="store_true", default=False,
+        help="페리페럴 모니터 파일(GPIO, I2C) 포함")
     ap.add_argument("--transport",  default="ITM", choices=["ITM","UART","itm","uart"],
                     help="전송 모드 (기본: ITM)")
     ap.add_argument("--check",      default=None, metavar="PATH", help="설치 상태 확인")

@@ -45,6 +45,11 @@ from analysis.orchestrator   import Orchestrator
 from analysis.causal_graph   import GlobalCausalGraph
 from analysis.event_queue    import EventPriorityQueue
 from analysis.alert_manager  import AlertManager
+try:
+    from analysis.trend_analyzer import TrendAnalyzer, AnomalyScorer
+    _TREND_AVAILABLE = True
+except ImportError:
+    _TREND_AVAILABLE = False
 from analysis.time_normalizer import TimeNormalizer
 
 
@@ -104,7 +109,9 @@ class AnalysisContext:
         self._sm     = TaskStateMachine()
         self._rg     = ResourceGraph()
         self._orch   = Orchestrator()
-        self._alert  = AlertManager(min_severity='Critical')
+        self._alert   = AlertManager(min_severity='Critical')
+        self._trend   = TrendAnalyzer(window=10) if _TREND_AVAILABLE else None
+        self._anomaly = AnomalyScorer(window=20)  if _TREND_AVAILABLE else None
         self._queue  = EventPriorityQueue(
             on_critical=self._alert.on_critical)
         self._tn     = TimeNormalizer(cpu_hz=cpu_hz)
