@@ -209,14 +209,14 @@ def build_context(
             groups    = group_issues_by_root_cause(issue_list)
             ctx       = enrich_context_with_analysis(
                             ctx, trend_r, anomaly_r, groups)
-        # Few-shot: 유사 과거 사례 주입
-        if _few_shot is not None and issue_list:
-            try:
-                fs = _few_shot.to_context(issue_list)
-                if fs:
-                    ctx.setdefault('analysis', {})['few_shot_examples'] = fs
-            except Exception:
-                pass
+            # Few-shot: 유사 과거 사례 주입
+            if _few_shot is not None and issue_list:
+                try:
+                    fs = _few_shot.to_context(issue_list)
+                    if fs:
+                        ctx.setdefault('analysis', {})['few_shot_examples'] = fs
+                except Exception:
+                    pass
         except Exception:
             pass  # 분석 실패해도 기본 context 반환
 

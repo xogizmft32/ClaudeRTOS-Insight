@@ -128,6 +128,13 @@ class PacketRecorder:
         self._fh.flush()
         self._count += 1
 
+    def close(self) -> None:
+        """stop()의 별칭 — 명시적 닫기 및 context manager 지원."""
+        self.stop()
+
+    def __enter__(self): self.start(); return self
+    def __exit__(self, *_): self.stop()
+
     def stop(self) -> int:
         """녹화 종료. 기록된 패킷 수 반환."""
         if self._fh:
@@ -185,7 +192,7 @@ class SessionReplayer:
         self._load()
 
     def _load(self) -> None:
-        with open(self._path, encoding='utf-8') as f:
+        with open(self._path, 'rb') as f:
             for line in f:
                 line = line.strip()
                 if not line:
