@@ -1,0 +1,27 @@
+{
+  "description": "SPI 모니터링 패턴",
+  "patterns": [
+    {
+      "id": "KP-SPI-001",
+      "name": "SPI Overrun — 수신 버퍼 오버플로",
+      "category": "spi",
+      "severity": "Medium",
+      "enabled": true,
+      "description": "SPI DR을 읽기 전 새 데이터 도착. DMA 미사용 또는 처리 지연.",
+      "match": {
+        "require_events": ["spi_overrun"],
+        "min_confidence": 0.65
+      },
+      "causal_chain_template": [
+        "SPI 마스터/슬레이브 수신",
+        "DR 미읽음 상태에서 새 데이터 도착",
+        "OVR 플래그 ({overrun_count}회) → 데이터 손실"
+      ],
+      "diagnosis": {
+        "root_cause": "SPI 수신 처리가 전송 속도를 따라가지 못함",
+        "fix": "1) DMA 수신 모드 활성화 2) SPI 클럭 속도 감소 3) 인터럽트 핸들러 최적화",
+        "prevention": "SPI RX DMA 설정, HAL_SPI_Receive_DMA() 사용"
+      }
+    }
+  ]
+}

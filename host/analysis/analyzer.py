@@ -209,6 +209,7 @@ class AnalysisEngine:
 
         self._consecutive.reset_absent(active_keys)
         self._issues += issues
+        issues += self._check_peripheral(snap)
         return issues
 
     def analyze_fault(self, fault: Dict) -> List[Issue]:
@@ -378,3 +379,69 @@ class AnalysisEngine:
                 timestamp_us=snap['timestamp_us'],
                 detail={'trend_pct_per_sample':round(trend,2)})]
         return []
+
+    def _check_peripheral(self, snap: Dict) -> List[Issue]:
+        """
+        페리페럴 이벤트 Rule-based 분석.
+
+        snap에 'peripheral' 키가 있을 때만 동작.
+        firmware peripheral_monitor가 수집한 통계를 분석.
+        """
+        issues = []
+        peri = snap.get('peripheral', {})
+        if not peri:
+            return issues
+
+        # GPIO 글리치
+        for pin in peri.get('gpio_pins', []):
+            glitch_count = pin.get('glitch_count', 0)
+            if glitch_count >= 3:
+                issues.append(Issue(
+                    severity='Medium',
+                    issue_type='gpio_glitch_storm',
+                    description=(f"GPIO '{pin.get('name','?')}' 글리치 "
+                                 f"{glitch_count}회 — 노이즈 또는 결선 불량"),
+                    affected_tasks=[],
+                    timestamp_us=snap.get('timestamp_us', 0),
+                    detail={'pin_name': pin.get('name','?'),
+                            'glitch_count': glitch_count,
+                            'history': pin.get('history', 0)},
+                ))
+
+        # I2C 오류
+        i2c = peri.get('i2c', {})
+        nack  = i2c.get('nack_count', 0)
+        to    = i2c.get('timeout_count', 0)
+        if nack >= 5:
+            issues.append(Issue(
+                severity='High',
+                issue_type='i2c_nack_storm',
+                description=(f"I2C NACK {nack}회 — 슬레이브 주소 오류 또는 "
+                             f"장치 응답 불가"),
+                affected_tasks=[],
+                timestamp_us=snap.get('timestamp_us', 0),
+                detail={'nack_count': nack, 'timeout_count': to},
+            ))
+        if to >= 3:
+            issues.append(Issue(
+                severity='High',
+                issue_type='i2c_timeout_repeated',
+                description=f"I2C 타임아웃 {to}회 — 버스 고착 또는 슬레이브 Clock Stretch 과다",
+                affected_tasks=[],
+                timestamp_us=snap.get('timestamp_us', 0),
+                detail={'timeout_count': to},
+            ))
+
+        # SPI 오버런
+        spi_overrun = peri.get('spi', {}).get('overrun_count', 0)
+        if spi_overrun >= 2:
+            issues.append(Issue(
+                severity='Medium',
+                issue_type='spi_overrun',
+                description=f"SPI 오버런 {spi_overrun}회 — DMA 미사용 또는 처리 지연",
+                affected_tasks=[],
+                timestamp_us=snap.get('timestamp_us', 0),
+                detail={'overrun_count': spi_overrun},
+            ))
+
+        return issues

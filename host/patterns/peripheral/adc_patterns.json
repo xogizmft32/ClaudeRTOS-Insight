@@ -1,0 +1,27 @@
+{
+  "description": "ADC 모니터링 패턴",
+  "patterns": [
+    {
+      "id": "KP-ADC-001",
+      "name": "ADC Overrun — 변환 완료 전 다음 변환 시작",
+      "category": "adc",
+      "severity": "Low",
+      "enabled": true,
+      "description": "ADC DR 미읽음 상태에서 다음 변환 시작. 샘플 손실.",
+      "match": {
+        "require_events": ["adc_overrun"],
+        "min_confidence": 0.60
+      },
+      "causal_chain_template": [
+        "ADC 자동 변환 시작",
+        "이전 DR 미읽음 상태",
+        "OVR 플래그 ({overrun_count}회) → 샘플 손실"
+      ],
+      "diagnosis": {
+        "root_cause": "ADC 샘플링 주기 대비 DR 읽기가 느림",
+        "fix": "1) ADC DMA 모드 사용 2) 샘플링 속도 감소 3) 변환 완료 인터럽트 처리 최적화",
+        "prevention": "HAL_ADC_Start_DMA() 사용, 연속 변환 모드에서 DMA 필수"
+      }
+    }
+  ]
+}

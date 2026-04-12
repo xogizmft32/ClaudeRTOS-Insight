@@ -82,6 +82,7 @@ def build_context(
     cpu_hz:         int                     = 180_000_000,
     resource_state: Optional[Dict]          = None,
     analysis_candidates: Optional[List[Dict]] = None,
+    peripheral_state: Optional[Dict]          = None,
 ) -> str:
     """
     AI에 전달할 compact JSON 문자열을 생성한다.
@@ -152,6 +153,10 @@ def build_context(
                 if ct is not None:
                     system['trends']['cpu_pct_per_sample'] = round(ct, 2)
         ctx['system'] = system
+
+    # ── peripheral (옵션) ────────────────────────────────
+    if peripheral_state:
+        ctx['peripheral'] = _peripheral_entry(peripheral_state)
 
     # ── tasks ────────────────────────────────────────────────
     if snap and snap.get('tasks'):
@@ -419,3 +424,53 @@ def pretty_print_context(ctx_json: str) -> None:
         print(json.dumps(obj, indent=2, ensure_ascii=False))
     except Exception:
         print(ctx_json)
+
+
+def _peripheral_entry(peri: Dict) -> Dict:
+    """
+    페리페럴 상태를 AI 컨텍스트용 구조체로 변환.
+
+    firmware peripheral_monitor 수집 데이터 또는
+    호스트 직접 분석 결과를 받아 정규화.
+    """
+    out: Dict = {}
+
+    # GPIO
+    gpio_pins = peri.get('gpio_pins', [])
+    if gpio_pins:
+        out['gpio'] = [{
+            'name':         p.get('name', '?'),
+            'state':        p.get('state', 0),
+            'change_count': p.get('change_count', 0),
+            'glitch_count': p.get('glitch_count', 0),
+        } for p in gpio_pins if p.get('glitch_count', 0) > 0
+            or p.get('change_count', 0) > 10]
+
+    # I2C
+    i2c = peri.get('i2c', {})
+    if i2c:
+        out['i2c'] = {
+            'nack_count':    i2c.get('nack_count', 0),
+            'timeout_count': i2c.get('timeout_count', 0),
+            'error_count':   i2c.get('error_count', 0),
+        }
+
+    # SPI
+    spi = peri.get('spi', {})
+    if spi.get('overrun_count', 0) > 0:
+        out['spi'] = {'overrun_count': spi['overrun_count']}
+
+    # 요약 이슈 (non-zero만 포함)
+    issues = []
+    if out.get('i2c', {}).get('nack_count', 0) >= 5:
+        issues.append('i2c_nack_storm')
+    if out.get('i2c', {}).get('timeout_count', 0) >= 3:
+        issues.append('i2c_timeout')
+    gpio_glitches = sum(p.get('glitch_count', 0)
+                        for p in out.get('gpio', []))
+    if gpio_glitches >= 3:
+        issues.append('gpio_glitch')
+    if issues:
+        out['detected_issues'] = issues
+
+    return out

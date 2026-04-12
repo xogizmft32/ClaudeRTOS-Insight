@@ -220,6 +220,9 @@ class CorrelationEngine:
         results += self._detect_starvation(tl)
         results += self._detect_stack_growth(tl)
         results += self._detect_heap_trend()
+        results += self._detect_i2c_task_correlation()
+        results += self._detect_gpio_isr_correlation()
+        results += self._detect_peripheral_heap_pressure()
 
         # 신뢰도 순 정렬
         return sorted(results, key=lambda r: r.confidence, reverse=True)
@@ -505,6 +508,105 @@ class CorrelationEngine:
 
 
 # ── 인과 체인 빌더 (이슈 + Correlation 통합) ─────────────────
+
+    def _detect_i2c_task_correlation(self) -> List[CorrelationResult]:
+        """CORR-007: I2C 오류 ↔ 태스크 Blocked 상관관계."""
+        results = []
+        if self._last_snap is None:
+            return results
+        s = self._last_snap
+        peri = s.get('peripheral', {})
+        i2c  = peri.get('i2c', {})
+        nack_count = i2c.get('nack_count', 0)
+        if nack_count < 3:
+            return results
+        blocked = [t for t in s.get('tasks', [])
+                   if t.get('state_name', '') == 'Blocked']
+        if not blocked:
+            return results
+        task_name = blocked[0].get('name', '?')
+        results.append(CorrelationResult(
+            pattern_id='CORR-007',
+            severity='High',
+            scenario='i2c_task_block',
+            description=(f"I2C NACK {nack_count}회 ↔ {task_name} BLOCKED — "
+                         f"I2C 응답 대기 중 슬레이브 무응답"),
+            causal_chain=[
+                f"{task_name}: I2C 전송 요청",
+                f"슬레이브 NACK × {nack_count}",
+                f"{task_name}: HAL_I2C_... 반환 대기 BLOCKED",
+            ],
+            evidence=[f"nack_count={nack_count}", f"blocked={task_name}"],
+            confidence=min(0.50 + nack_count * 0.05, 0.85),
+            affected_tasks=[task_name],
+        ))
+        return results
+
+    def _detect_gpio_isr_correlation(self) -> List[CorrelationResult]:
+        """CORR-008: GPIO 글리치 ↔ ISR 과다 발생 상관관계."""
+        results = []
+        if self._last_snap is None:
+            return results
+        s = self._last_snap
+        peri = s.get('peripheral', {})
+        gpio_pins = peri.get('gpio_pins', [])
+        total_glitch = sum(p.get('glitch_count', 0) for p in gpio_pins)
+        if total_glitch < 5:
+            return results
+        cpu = s.get('cpu_usage', 0)
+        if cpu < 70:
+            return results
+        glitch_pins = [p.get('name','?') for p in gpio_pins
+                       if p.get('glitch_count', 0) >= 3]
+        results.append(CorrelationResult(
+            pattern_id='CORR-008',
+            severity='Medium',
+            scenario='gpio_cpu',
+            description=(f"GPIO 글리치 {total_glitch}회 ↔ CPU {cpu}% — "
+                         f"EXTI ISR 과다 호출 의심"),
+            causal_chain=[
+                f"GPIO [{', '.join(glitch_pins)}]: 글리치",
+                f"EXTI ISR 과다 ({total_glitch}회)",
+                f"CPU {cpu}%",
+            ],
+            evidence=[f"glitch={total_glitch}", f"cpu={cpu}%"],
+            confidence=min(0.45 + total_glitch * 0.04, 0.80),
+            affected_tasks=[],
+        ))
+        return results
+
+    def _detect_peripheral_heap_pressure(self) -> List[CorrelationResult]:
+        """CORR-009: 페리페럴 오류 ↔ Heap 압박 상관관계."""
+        results = []
+        if self._last_snap is None:
+            return results
+        s = self._last_snap
+        peri = s.get('peripheral', {})
+        i2c_err  = peri.get('i2c', {}).get('error_count', 0)
+        spi_err  = peri.get('spi', {}).get('overrun_count', 0)
+        total_err = i2c_err + spi_err
+        if total_err < 3:
+            return results
+        heap_pct = s.get('heap', {}).get('used_pct', 0)
+        if heap_pct < 75:
+            return results
+        results.append(CorrelationResult(
+            pattern_id='CORR-009',
+            severity='Medium',
+            scenario='peripheral_heap',
+            description=(f"페리페럴 오류 {total_err}회 ↔ Heap {heap_pct}% — "
+                         f"오류 재시도 루프 동적 할당 의심"),
+            causal_chain=[
+                f"I2C/SPI 오류 {total_err}회",
+                "재시도 루프 동적 할당",
+                f"Heap {heap_pct}%",
+            ],
+            evidence=[f"peri_errors={total_err}", f"heap={heap_pct}%"],
+            confidence=0.55,
+            affected_tasks=[],
+        ))
+        return results
+
 def build_causal_chains(issues: List[Dict],
                          correlations: List[CorrelationResult],
                          timeline: List[Dict],

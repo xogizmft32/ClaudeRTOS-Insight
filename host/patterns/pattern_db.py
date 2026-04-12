@@ -521,8 +521,33 @@ class PatternDB:
         }
 
 
-# ── 싱글턴 (기본 DB) ─────────────────────────────────────────
-_default_db: Optional[PatternDB] = None
+
+    def load_peripheral_patterns(self, peri_dir: str = None) -> int:
+        """
+        host/patterns/peripheral/*.json 에서 페리페럴 패턴 로드.
+        PatternDB.load() 후 호출하면 peripheral 패턴이 추가됨.
+
+        사용:
+            pdb = PatternDB().load()
+            pdb.load_peripheral_patterns()
+        """
+        import glob as _glob, os as _os, json as _json
+        if peri_dir is None:
+            base = _os.path.dirname(_os.path.abspath(__file__))
+            peri_dir = _os.path.join(base, 'peripheral')
+        loaded = 0
+        for fpath in sorted(_glob.glob(_os.path.join(peri_dir, '*.json'))):
+            try:
+                data = _json.loads(open(fpath, encoding='utf-8').read())
+                for p in data.get('patterns', []):
+                    if p.get('enabled', True):
+                        self._patterns.append(p)
+                        loaded += 1
+            except Exception as e:
+                import warnings
+                warnings.warn(f"Peripheral 패턴 로드 실패 {fpath}: {e}")
+        return loaded
+
 
 def get_db(chain_max_steps: int = 7) -> PatternDB:
     """전역 기본 DB 인스턴스 반환. 처음 호출 시 로드."""
@@ -536,3 +561,4 @@ def reload_db() -> PatternDB:
     global _default_db
     _default_db = None
     return get_db()
+

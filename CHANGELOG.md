@@ -1108,7 +1108,7 @@ debugger = RTOSDebuggerV3(
 - 주요 기능 표: 기존 10개 → 17개 (Trend Analyzer, Anomaly Scorer, Hallucination Guard, Session Logger, Debug Report, Peripheral Monitor 추가)
 - 파일 구조: 신규 파일 전체 반영
 - 버전 이력: 4.2.0 단일 → v2.3~v4.9.0 전체 CHANGELOG 링크
-- About 섹션: 바이브 코딩 → AI 보조 설계(AI-Assisted Design) 완전 반영
+- About 섹션: AI 보조 설계 → AI 보조 설계(AI-Assisted Design) 완전 반영
 
 **📚 문서 목록 섹션 신설 (README 내)**
 - 기존: docs/ 링크 9개 (전체 29개 중 20개 미등록)
@@ -1256,3 +1256,50 @@ debugger = RTOSDebuggerV3(
 [19] install.py v4.0                     ✅
 [20] 20/20 Protocol PASS                ✅
 ```
+
+## [4.9.5] — 2026-04-12 ✅ PRODUCTION READY
+
+### 1. README v4.9.4 → v4.9.5 갱신
+- 버전 배지 동기화
+- PacketRecorder/CorrelationEngine API 주의사항 추가
+- 페리페럴 고도화 항목 반영 (CORR-007~009, peripheral_state)
+- 파이프라인 PatternDB 설명 업데이트 (페리페럴 패턴 6개)
+
+### 2. 페리페럴 호스트 분석 고도화
+
+**Rule 감지 확장** (`host/analysis/analyzer.py`)
+- `gpio_glitch_storm`: glitch_count ≥ 3
+- `i2c_nack_storm`: nack_count ≥ 5
+- `i2c_timeout_repeated`: timeout_count ≥ 3
+- `spi_overrun`: overrun_count ≥ 2
+- 입력: `snap['peripheral'] = {'gpio_pins':[], 'i2c':{}, 'spi':{}}`
+
+**Correlation 페리페럴 패턴** (`host/analysis/correlation_engine.py`)
+- `CORR-007`: I2C NACK ↔ 태스크 BLOCKED 상관관계
+  - I2C NACK 3회+ & Blocked 태스크 존재 → HAL_I2C_* 응답 대기 의심
+- `CORR-008`: GPIO 글리치 ↔ CPU 상승
+  - 글리치 5회+ & CPU 70%+ → EXTI ISR 과다 호출 의심
+- `CORR-009`: 페리페럴 오류 ↔ Heap 압박
+  - I2C/SPI 오류 3회+ & Heap 75%+ → 재시도 루프 동적 할당 의심
+
+**AI 컨텍스트 통합** (`host/analysis/debugger_context.py`)
+- `build_context(peripheral_state=...)` 파라미터 추가
+- `ctx['peripheral']` 자동 생성: gpio/i2c/spi 이상 + `detected_issues` 요약
+- AI가 "I2C NACK 8회 + SensorTask BLOCKED" 상황을 직접 인식 가능
+
+**PatternDB 페리페럴 패턴** (`host/patterns/pattern_db.py`)
+- `PatternDB.load_peripheral_patterns()` 클래스 메서드 추가
+- 로드 대상: gpio, i2c, spi, adc JSON (4개 파일, 총 6개 패턴)
+
+**패턴 파일 신규 추가** (`host/patterns/peripheral/`)
+- `spi_patterns.json`: KP-SPI-001 SPI Overrun
+- `adc_patterns.json`: KP-ADC-001 ADC Overrun
+- (기존) gpio_patterns.json, i2c_patterns.json
+
+**HEISENBUG_GUIDE.md** 페리페럴 섹션 추가
+- GPIO 폴링 타이밍 한계 (1ms 미만 글리치 미감지)
+- I2C 모니터 오버헤드 점검 방법
+- 페리페럴 체크리스트
+
+### Validation: 18/18 항목 + 20/20 Protocol PASS
+### 문서: 31개 전체 이상 없음
