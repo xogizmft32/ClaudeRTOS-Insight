@@ -1303,3 +1303,114 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 18/18 항목 + 20/20 Protocol PASS
 ### 문서: 31개 전체 이상 없음
+
+## [4.9.6] — 2026-04-13 ✅ PRODUCTION READY
+
+### AI 에이전트 Provider 선택지 확장
+
+단순 API 호출 외에 에이전트 루프 기반 Provider 2종 추가.
+
+#### Claude Agent SDK Provider (`host/ai/providers/claude_agent_provider.py`)
+
+- 패키지: `claude-agent-sdk>=0.1.56` (최신 stable 기준)
+- Claude Code CLI 자동 번들 — 별도 Node.js 설치 불필요
+- 에이전트 루프: 프롬프트 → 중간 추론 → 최종 응답 (최대 N회 반복)
+- 인증: `ANTHROPIC_API_KEY` (기존 Provider와 동일)
+- 모델: `claude-sonnet-4-6` (기본), `CLAUDE_AGENT_MODEL`로 오버라이드
+- graceful 처리: SDK 미설치 시 `ImportError` 안내 메시지 반환
+- 사용: `export CLAUDERTOS_AI_PROVIDER=claude_agent`
+
+#### Gemini CLI Provider (`host/ai/providers/gemini_cli_provider.py`)
+
+- Gemini CLI v0.37.x headless 모드 기반 (`--output-format json`)
+- 인증 3가지 지원:
+  - OAuth (Google 계정 로그인, **무료** 60req/min)
+  - `GOOGLE_API_KEY` (Gemini API Key)
+  - Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`)
+- 출력 파싱 3단계 폴백: JSON → JSONL(streaming) → 텍스트
+- 모델: `gemini-2.5-pro` (Tier1), `gemini-2.0-flash` (Tier2)
+- 환경 변수: `GEMINI_CLI_MODEL`, `GEMINI_CLI_TIMEOUT`, `GEMINI_CLI_PATH`
+- 사용: `export CLAUDERTOS_AI_PROVIDER=gemini_cli`
+
+#### factory.py 업데이트
+
+- 지연 import 구조로 의존성 없는 환경에서도 정상 동작
+- `list_providers()` → `claude_agent`, `gemini_cli` 포함
+- `create_provider('gemini_cli')` / `create_provider('claude_agent')` 지원
+
+#### 문서 신규 추가
+
+- `docs/GEMINI_CLI_GUIDE.md` (6KB) — Gemini CLI 설치·인증·설정·문제해결 완전 가이드
+- `docs/CLAUDE_AGENT_GUIDE.md` (1KB) — Claude Agent SDK 빠른 설정 가이드
+
+#### Provider 비교 (현재 지원 전체)
+
+| Provider | 방식 | 무료 | 에이전트 루프 | 오프라인 |
+|----------|------|------|------------|--------|
+| `anthropic` | REST API | ❌ | ❌ | ❌ |
+| `openai` | REST API | ❌ | ❌ | ❌ |
+| `google` | REST API | ❌ | ❌ | ❌ |
+| `ollama` | REST API | ✅ | ❌ | ✅ |
+| `claude_agent` | Agent SDK | ❌ | ✅ | ❌ |
+| `gemini_cli` | CLI subprocess | ✅ | 제한적 | ❌ |
+
+### Validation: 32/32 + 20/20 Protocol PASS
+### 문서: 33개 전체 이상 없음
+### README: v4.9.6, docs 링크 31개
+
+## [4.9.6] — 2026-04-13 ✅ PRODUCTION READY
+
+### AI 에이전트 CLI Provider 추가 (Claude Agent SDK + Gemini CLI)
+
+#### 1. Claude Agent SDK Provider (`host/ai/providers/claude_agent_provider.py`)
+
+- 공식 Claude Agent SDK v0.1.56 기반 (최신, 2026-04-04 릴리즈)
+- 에이전트 루프 지원: 프롬프트 → 도구 실행 → 추론 → 응답 (multi-turn)
+- Claude Code CLI 자동 번들 (별도 설치 불필요)
+- 인증: `ANTHROPIC_API_KEY` (단순 API와 동일)
+- SDK 미설치 시 `ImportError` graceful 처리 (기존 Provider 영향 없음)
+- 환경 변수: `CLAUDERTOS_AI_PROVIDER=claude_agent`
+- 설치: `pip install claude-agent-sdk>=0.1.56`
+
+#### 2. Gemini CLI Provider (`host/ai/providers/gemini_cli_provider.py`)
+
+- Gemini CLI v0.37.x headless 모드 (`--output-format json`) 기반
+- **무료 사용 가능**: Google OAuth 로그인 시 60req/min, 1,000req/day
+- 3단계 출력 파싱 폴백: JSON → JSONL(스트리밍) → 텍스트
+- 인증 3가지 지원: OAuth(무료), API Key, Vertex AI
+- CLI 탐색: 명시 경로 > PATH > `npx` 폴백
+- 환경 변수:
+  - `CLAUDERTOS_AI_PROVIDER=gemini_cli`
+  - `GOOGLE_API_KEY=AIza...` (OAuth 사용 시 불필요)
+  - `GEMINI_CLI_MODEL=gemini-2.5-pro` (기본)
+  - `GEMINI_CLI_MODEL_TIER2=gemini-2.0-flash` (기본)
+  - `GEMINI_CLI_TIMEOUT=120` (기본)
+- 설치: `npm install -g @google/gemini-cli` (Node.js 18+ 필요)
+
+#### 3. factory.py 개선
+
+- `_registry()` 내부 지연 import 구조로 변경
+- `claude_agent` / `gemini_cli` 등록 (기존 Provider 유지)
+- SDK 미설치 시 `create_provider('claude_agent')` → `ImportError` 안내
+- `list_providers()` — 7개 Provider 반환
+
+#### 4. 문서
+
+- `docs/GEMINI_CLI_GUIDE.md` (6KB) 신규:
+  설치 / 인증 3가지 / ClaudeRTOS 연결 / 모델 선택 / 비용 / 문제해결 / Provider 비교표
+- `docs/CLAUDE_AGENT_GUIDE.md` 신규: 단순 API vs Agent SDK 비교, 설치, 설정
+- `README.md` 갱신: Provider 표 6개, 환경 변수 예제, 문서 링크 31개
+
+#### Provider 전체 목록 (v4.9.6)
+
+| Provider | 방식 | 비용 | 특징 |
+|----------|------|------|------|
+| anthropic | REST API | ~$0.0085 | 기본, 안정 |
+| claude_agent | Agent SDK (CLI) | ~$0.0085 | 에이전트 루프 |
+| openai | REST API | ~$0.0072 | 균형형 |
+| google | REST API | ~$0.0060 | Gemini Pro |
+| gemini_cli | CLI subprocess | $0 (OAuth) | 무료 사용 |
+| ollama | 로컬 REST | $0 | 오프라인 |
+
+### Validation: 40/40 + 20/20 Protocol PASS
+### 문서: 33개 전체 이상 없음

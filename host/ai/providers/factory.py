@@ -51,12 +51,22 @@ def _registry() -> dict:
     from .google    import GoogleProvider
     from .ollama    import OllamaProvider
 
+    # ── 에이전트 모드 Provider 지연 import ─────────────────
+    from .gemini_cli_provider import GeminiCLIProvider
+    try:
+        from .claude_agent_provider import ClaudeAgentProvider
+        _claude_agent_cls = ClaudeAgentProvider
+    except ImportError:
+        _claude_agent_cls = None
+
     return {
         'anthropic':    AnthropicProvider,
         'openai':       OpenAIProvider,
-        'openai_compat': OpenAIProvider,   # 동일 클래스, base_url로 구분
+        'openai_compat': OpenAIProvider,
         'google':       GoogleProvider,
         'ollama':       OllamaProvider,
+        'claude_agent': _claude_agent_cls,
+        'gemini_cli':   GeminiCLIProvider,
     }
 
 
@@ -84,11 +94,18 @@ def create_provider(name: Optional[str] = None, **kwargs) -> AIProvider:
     cls = registry.get(provider_name)
 
     if cls is None:
-        available = ', '.join(sorted(registry.keys()))
+        # cls가 None: 이름은 등록됐지만 SDK 미설치 (claude_agent 등)
+        if provider_name in registry:
+            raise ImportError(
+                f"Provider '{provider_name}' 등록됨이나 SDK가 설치되지 않았습니다.\n"
+                f"  claude_agent: pip install claude-agent-sdk>=0.1.56\n"
+                f"  gemini_cli:   npm install -g @google/gemini-cli"
+            )
+        available = ', '.join(sorted(k for k,v in registry.items() if v is not None))
         raise ValueError(
             f"Unknown provider: '{provider_name}'\n"
             f"  Available: {available}\n"
-            f"  Usage: create_provider('openai')"
+            f"  Usage: create_provider('anthropic')"
         )
 
     return cls(**kwargs)
@@ -96,4 +113,4 @@ def create_provider(name: Optional[str] = None, **kwargs) -> AIProvider:
 
 def list_providers() -> list:
     """사용 가능한 provider 이름 목록 반환."""
-    return sorted(_registry().keys())
+    return sorted(k for k, v in _registry().items())

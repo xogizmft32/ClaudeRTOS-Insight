@@ -23,4 +23,17 @@ pytest>=7.4.0
 # pip install anthropic pyserial numpy
 #
 # Ollama (로컬, $0): ollama serve && ollama pull qwen2.5:3b
+#
+# ── 에이전트 모드 Provider (선택, 고급) ──────────────────────
+# Claude Agent SDK (에이전트 루프, Claude Code CLI 번들 포함):
+#   pip install claude-agent-sdk>=0.1.56
+#   export CLAUDERTOS_AI_PROVIDER=claude_agent
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#
+# Gemini CLI (headless 모드, 무료 티어 60req/min):
+#   npm install -g @google/gemini-cli   # Node.js 18+ 필요
+#   gemini login                         # OAuth (Google 계정) 또는
+#   export GOOGLE_API_KEY=AIza...        # API Key (Google AI Studio)
+#   export CLAUDERTOS_AI_PROVIDER=gemini_cli
+#   → 자세한 설정: docs/GEMINI_CLI_GUIDE.md
 # Docker:  docker-compose run --rm claudertos --validate
