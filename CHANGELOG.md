@@ -1414,3 +1414,50 @@ debugger = RTOSDebuggerV3(
 
 ### Validation: 40/40 + 20/20 Protocol PASS
 ### 문서: 33개 전체 이상 없음
+
+## [4.9.7] — 2026-04-13 ✅ PRODUCTION READY
+
+### OpenAI Codex CLI Provider 추가
+
+#### CodexCLIProvider (`host/ai/providers/codex_cli_provider.py`)
+
+- 패키지: `npm install -g @openai/codex` (Node.js 18+)
+- 방식: `codex exec "prompt" --json --full-auto --skip-git-repo-check --ephemeral`
+- 출력: JSONL 이벤트 스트림 파싱 (agent_message/session_info/reasoning)
+- 인증:
+  - `CODEX_API_KEY` (CI/headless 권장)
+  - `OPENAI_API_KEY` (대체)
+  - ChatGPT OAuth (`codex login`, Plus/Pro 구독 포함)
+- 모델:
+  - Tier1: `gpt-5.3-codex` (코딩 특화 최신 flagship)
+  - Tier2: `codex-mini-latest` (경량)
+- 파싱 3단계 폴백: JSONL → 텍스트 → 원본
+- CLI 없을 때: `FileNotFoundError` 대신 설치 안내 AIResponse 반환
+- 사용: `export CLAUDERTOS_AI_PROVIDER=codex_cli`
+
+#### 문서 (`docs/CODEX_CLI_GUIDE.md`, 7KB)
+
+- 설치: Node.js 18+, `npm install -g @openai/codex`
+- 인증 3가지 방법: API Key / ChatGPT OAuth / npx (설치 없이)
+- ClaudeRTOS 연결 설정 (환경 변수, Python 코드)
+- 모델 선택: gpt-5.3-codex / codex-mini-latest
+- 비용: ChatGPT 구독 포함 / API Key 종량제
+- 문제 해결: CLI 미발견 / 인증 오류 / Git 저장소 오류 / WSL2 / Docker
+- 전체 Provider 비교표
+
+### 에이전트 호출/응답 파이프라인 전체 점검 (59/59 PASS)
+
+검증 항목:
+- 7개 Provider 등록 확인 (anthropic/openai/google/ollama/claude_agent/gemini_cli/codex_cli)
+- 10개 Provider 파일 구문 검사
+- 각 Provider is_available() / model_for_tier() / estimate_cost() 반환 타입
+- CLI 미설치 시 fallback AIResponse 반환 (설치 안내 포함)
+- Codex CLI JSONL 파싱 6종 시나리오 (정상/빈값/텍스트/혼합/오류)
+- Gemini CLI JSON 파싱
+- create_provider() 팩토리 6개 Provider 생성
+- RTOSDebuggerV3 Provider 교체 동작
+- HallucinationGuard 새 Provider 응답 검증
+- 문서 34개 전체 이상 없음
+- 20/20 Protocol PASS
+
+### README: v4.9.7, Provider 7종 + docs 링크 32개

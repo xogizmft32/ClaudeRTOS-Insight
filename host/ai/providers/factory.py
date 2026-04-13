@@ -53,6 +53,7 @@ def _registry() -> dict:
 
     # ── 에이전트 모드 Provider 지연 import ─────────────────
     from .gemini_cli_provider import GeminiCLIProvider
+    from .codex_cli_provider  import CodexCLIProvider
     try:
         from .claude_agent_provider import ClaudeAgentProvider
         _claude_agent_cls = ClaudeAgentProvider
@@ -67,6 +68,7 @@ def _registry() -> dict:
         'ollama':       OllamaProvider,
         'claude_agent': _claude_agent_cls,
         'gemini_cli':   GeminiCLIProvider,
+        'codex_cli':    CodexCLIProvider,
     }
 
 
