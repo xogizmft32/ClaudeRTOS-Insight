@@ -2,6 +2,8 @@
  * Safety-Critical Design - ⚠️ NOT CERTIFIED
  */
 
+#include "FreeRTOS.h"
+#include "task.h"
 #include "adaptive_sampler.h"
 #include "event_classifier.h"
 #include <string.h>
@@ -182,7 +184,7 @@ bool AdaptiveSampler_ShouldSend(AdaptiveSampler_t *sampler,
     }
     
     /* Periodic update (even if no change) */
-    uint32_t current_time = 0;  /* TODO: Get from FreeRTOS tick */
+    uint32_t current_time = (uint32_t)xTaskGetTickCount();
     if (current_time - sampler->last_send_time >= 
         sampler->config.max_skip_period_ms) {
         return true;  /* Force periodic update */
@@ -253,7 +255,7 @@ void AdaptiveSampler_TriggerBurst(AdaptiveSampler_t *sampler)
     }
     
     sampler->in_burst_mode = true;
-    sampler->burst_start_time = 0;  /* TODO: Get from FreeRTOS tick */
+    sampler->burst_start_time = (uint32_t)xTaskGetTickCount();
     sampler->burst_events++;
 }
 
@@ -271,14 +273,14 @@ void AdaptiveSampler_Update(AdaptiveSampler_t *sampler,
     memcpy(&sampler->last_snapshot, snapshot, sizeof(OSSnapshot_t));
     
     /* Update send time */
-    sampler->last_send_time = 0;  /* TODO: Get from FreeRTOS tick */
+    sampler->last_send_time = (uint32_t)xTaskGetTickCount();
     
     /* Update sent counter */
     sampler->snapshots_sent++;
     
     /* Check if burst mode should end */
     if (sampler->in_burst_mode) {
-        uint32_t current_time = 0;  /* TODO: Get from FreeRTOS tick */
+        uint32_t current_time = (uint32_t)xTaskGetTickCount();
         if (current_time - sampler->burst_start_time >= 
             sampler->config.burst_duration_ms) {
             sampler->in_burst_mode = false;

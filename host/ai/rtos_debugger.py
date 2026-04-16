@@ -327,8 +327,9 @@ class RTOSDebuggerV3:
                 import time as _t
                 rpt_path = f'resource_report_{_t.strftime("%Y%m%d_%H%M%S")}.md'
                 self._reporter.save_markdown(rpt_path)
-            except Exception:
-                pass
+            except Exception as _rr_err:
+                import warnings
+                warnings.warn(f'ResourceReporter 저장 실패: {_rr_err}')
         candidates = self._learner.get_candidates()
         saved = self._learner.save_to_db(auto_save=auto_save)
         return len(saved)

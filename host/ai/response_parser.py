@@ -139,6 +139,12 @@ class ParsedResponse:
     raw_snapshot:        dict    = dataclasses.field(default=None)  # AI에 전달된 실제 스냅샷 데이터
     raw_timeline_events: list   = dataclasses.field(default=None)  # AI에 전달된 실제 이벤트 목록
     verification_notes:  list   = dataclasses.field(default=None)  # 자동 검증 결과
+
+    # ── 수정 코드 추출 ─────────────────────────────────────
+    fix_file:   str = ''   # 수정할 파일 경로
+    fix_line:   int = 0    # 수정 라인 번호
+    fix_before: str = ''   # 수정 전 코드
+    fix_after:  str = ''   # 수정 후 코드
     parse_success:       bool    = True
     parse_errors:        List[str] = field(default_factory=list)
 
@@ -268,6 +274,8 @@ class AIResponseParser:
                     hypothesis=c.get('hypothesis', ''),
                     confidence=float(c.get('confidence', 0.5)),
                     evidence=c.get('evidence', []),
+                    # fix 코드 추출 (AI 응답에 있으면)
+                    **_extract_fix(c),
                 ))
             elif isinstance(c, str):
                 candidates.append(RootCauseCandidate(hypothesis=c,
@@ -353,3 +361,25 @@ class AIResponseParser:
             ))
 
         return ParsedResponse(issues=issues, parse_success=bool(issues))
+
+
+def _extract_fix(issue_dict: dict) -> dict:
+    """
+    AI 응답 이슈 딕셔너리에서 수정 코드 정보 추출.
+
+    지원 형식:
+      "fix": {"file": "main.c", "line": 267,
+              "before": "...", "after": "..."}
+      "recommended_actions": [{"fix": {...}}]
+    """
+    fix = issue_dict.get('fix', {})
+    if not fix:
+        actions = issue_dict.get('recommended_actions', [])
+        if actions and isinstance(actions, list):
+            fix = actions[0].get('fix', {})
+    return {
+        'fix_file':   str(fix.get('file',   '')),
+        'fix_line':   int(fix.get('line',    0)),
+        'fix_before': str(fix.get('before', '')),
+        'fix_after':  str(fix.get('after',  '')),
+    }

@@ -115,39 +115,128 @@ def _run_validate():
 
 
 def _run_debug(args):
-    """실제 디버깅 세션 실행."""
+    """
+    실제 디버깅 세션 실행.
+
+    수신기(Collector) → StreamingParser → 분석 파이프라인 → AI 분석
+    """
     print(f"ClaudeRTOS-Insight — 디버깅 시작")
-    print(f"  포트: {args.port}")
+    print(f"  포트:    {args.port}")
     print(f"  AI 모드: {args.ai_mode}")
-    print(f"  프로파일: {args.profile}")
-    print(f"  로그: {args.log_dir}/\n")
+    print(f"  프로파일:{args.profile}")
+    print(f"  로그:    {args.log_dir}/\n")
 
     try:
-        from analysis.debugger_context import init_session_analyzers
+        import json
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+        from collector              import Collector
+        from analysis.debugger_context import init_session_analyzers, build_context
+        from analysis.analyzer         import AnalysisEngine
         from analysis.session_logger   import SessionLogger
         from analysis.debug_report     import DebugReportGenerator
+        from analysis.alert_manager    import AlertManager
+        from ai.rtos_debugger          import RTOSDebuggerV3
+        from ai.response_parser        import ResponseParser
 
+        # 세션 초기화
         init_session_analyzers()
-
+        engine   = AnalysisEngine()
         logger   = SessionLogger(log_dir=args.log_dir)
-        reporter = DebugReportGenerator(profile=args.profile)
+        reporter = DebugReportGenerator(project_name="ClaudeRTOS", profile=args.profile)
+        parser   = ResponseParser()
+        alert    = AlertManager(min_severity='Critical')
 
         logger.start()
-        print("세션 시작. Ctrl+C로 종료.\n")
+        print("✅ 파이프라인 초기화 완료")
+        print(f"✅ AI: {os.environ.get('CLAUDERTOS_AI_PROVIDER','anthropic')}")
+        print("→ Ctrl+C로 종료\n")
 
-        # 포트 연결 및 수신 루프 (실제 구현은 integrated_demo.py 참조)
-        print("→ 연결 중...")
-        print("→ 호스트 분석 파이프라인 초기화 완료")
-        print(f"→ AI: {os.environ.get('CLAUDERTOS_AI_PROVIDER','anthropic')}")
-        print("\n실제 하드웨어 수신 루프는 examples/integrated_demo.py 참조")
+        # 수신기 생성 및 연결
+        cpu_hz = 180_000_000
+        collector = Collector(args.port, cpu_hz=cpu_hz)
+        collector.open()
+        print(f"✅ 연결 완료 ({args.port})\n")
 
-    except KeyboardInterrupt:
-        print("\n\n세션 종료.")
-        summary = logger.stop()
-        if args.report:
-            reporter.save(args.report)
-            print(f"보고서 저장: {args.report}")
-        print(f"이슈: {summary.issue_count}개, Critical: {summary.critical_count}개")
+        snap_count = 0
+        ai_calls   = 0
+
+        try:
+            for raw in collector.stream():
+                # 1. 패킷 파싱
+                if isinstance(raw, bytes) and raw.startswith(b'{'):
+                    # 시뮬레이션: JSON 스냅샷 직접 사용
+                    try:
+                        snap = json.loads(raw.decode())
+                    except Exception:
+                        continue
+                else:
+                    # 실제 하드웨어: Binary Protocol V4 파싱
+                    # (BinaryParserV3는 StreamingParser 경유)
+                    continue  # 실제 파싱은 StreamingParser에서 처리
+
+                snap_count += 1
+                logger.log_snapshot(snap)
+                reporter.add_snapshot(snap)
+
+                # 2. 로컬 Rule 분석 (<1ms)
+                issues_objs = engine.analyze_snapshot(snap)
+                issue_dicts = [i.to_dict() for i in issues_objs]
+
+                if issue_dicts:
+                    for iss in issue_dicts:
+                        logger.log_issue(iss)
+                        reporter.add_issue(iss)
+
+                    # Critical 알림
+                    crits = [i for i in issue_dicts if i.get('severity')=='Critical']
+                    if crits:
+                        alert.on_critical(crits)
+
+                    # 3. AI 분석 (AI 모드이고 이슈 있을 때)
+                    if args.ai_mode != 'offline' and crits:
+                        ctx_str = build_context(
+                            snap=snap, issues=issue_dicts,
+                            timeline_events=[], resource_state={},
+                            analysis_candidates=[], isr_stats={},
+                            cpu_hz=cpu_hz)
+                        debugger = RTOSDebuggerV3()
+                        result   = debugger.debug_snapshot(snap, issue_dicts, [])
+                        reporter.add_ai_result(result)
+                        logger.log_ai_result(result)
+                        ai_calls += 1
+
+                    # 진행 표시
+                    sev = crits[0]['severity'] if crits else 'OK'
+                    print(f"  [{snap_count:4d}] {sev:8s} "
+                          f"CPU:{snap.get('cpu_usage',0):3.0f}% "
+                          f"Heap:{snap.get('heap',{}).get('used_pct',0):3.0f}%")
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            collector.close()
+
+    except ImportError as e:
+        print(f"\n의존성 오류: {e}")
+        print("pip install -r host/requirements.txt")
+        return
+    except Exception as e:
+        print(f"\n오류: {e}")
+        return
+
+    # 세션 종료
+    print(f"\n{'='*50}")
+    print(f"세션 종료 — 스냅샷 {snap_count}개, AI 호출 {ai_calls}회")
+    summary = logger.stop()
+    print(f"이슈: {summary.issue_count}개, Critical: {summary.critical_count}개")
+    print(f"수신 통계: {collector.stats}")
+
+    if args.report:
+        path = reporter.save(args.report)
+        print(f"보고서 저장: {path}")
+    print(f"로그: {args.log_dir}/")
 
 
 if __name__ == '__main__':

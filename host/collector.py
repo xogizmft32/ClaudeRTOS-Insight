@@ -1,244 +1,140 @@
 #!/usr/bin/env python3
 """
-ClaudeRTOS-Insight Collector V3.2
+collector.py — 실제 하드웨어 데이터 수신기
 
-지원 전송 방식:
-  ITM/SWO  — J-Link  (pylink-square)
-  ITM/SWO  — OpenOCD (TCP)
-  UART     — 시리얼 포트 (pyserial)
+J-Link ITM(SWO) 또는 UART로부터 Binary Protocol V4 패킷을 수신하여
+StreamingParser에 공급한다.
 
-핵심 수정 (ITM-06,07,08,09,10):
-  - ITM 프로토콜 헤더 파싱 수정 (ARM IHI0029E 스펙)
-      port      = (header >> 3) & 0x1F   ← 수정 (기존: header & 0x1F)
-      size_bits = (header >> 1) & 0x03   ← 수정 (기존: (header >> 3) & 0x03)
-  - 포트별 바이트 누적 후 StreamingParser.feed() 호출
-  - 루프에서 첫 패킷만 return 하던 버그 제거 (전체 swo_data 처리)
-  - OpenOCDCollector TCP 구현 추가
-  - UARTCollector 추가
-  - 모든 Collector → StreamingParser → 콜백 통일 인터페이스
+지원 연결:
+  --port jlink          J-Link ITM(SWO), pylink-square 필요
+  --port uart:/dev/ttyUSB0   UART, pyserial 필요
+  --port uart:COM3            UART (Windows)
+  --port simulate       시뮬레이션 (테스트용)
+
+사용:
+    collector = Collector.from_port_str("jlink")
+    collector.open()
+    for packet in collector.stream():          # raw bytes 스트림
+        parsed = streaming_parser.feed(packet)
+        if parsed:
+            analyze(parsed)
+    collector.close()
 """
 
 from __future__ import annotations
 
-import time
-import socket
+import os
+import struct
 import threading
-import logging
+import time
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from typing import Optional, Callable, Dict
-
-logger = logging.getLogger(__name__)
+from typing import Iterator, Optional
 
 
-# ── 콜백 타입 ────────────────────────────────────────────────────
-# on_packet(result): ParsedSnapshot | ParsedFault | None
-PacketCallback = Callable[[object], None]
-
-
-# ═══════════════════════════════════════════════════════════════
-#  ITM 포트별 바이트 누산기
-# ═══════════════════════════════════════════════════════════════
-class ITMPortAccumulator:
-    """
-    포트별 바이트를 누적하다 StreamingParser로 전달.
-
-    ITM 스티뮬러스 패킷은 1~4바이트 단위로 도착.
-    ClaudeRTOS 바이너리 패킷은 최소 16바이트이므로
-    여러 ITM 패킷이 쌓여야 완성됨.
-
-    StreamingParser는 완성된 패킷을 발견하면 콜백을 호출.
-    """
-
-    def __init__(self, on_packet: PacketCallback):
-        # port → StreamingParser 인스턴스
-        from parsers.binary_parser import BinaryParserV3, StreamingParser
-        self._parsers: Dict[int, StreamingParser] = {}
-        self._on_packet = on_packet
-        self._ParserCls  = BinaryParserV3
-        self._StreamCls  = StreamingParser
-
-    def _get_parser(self, port: int) -> object:
-        if port not in self._parsers:
-            bp = self._ParserCls()
-            sp = self._StreamCls(bp)
-            sp.on_packet(self._on_packet)
-            self._parsers[port] = sp
-        return self._parsers[port]
-
-    def feed_port(self, port: int, data: bytes) -> None:
-        """포트 N 에서 수신한 바이트들을 해당 StreamingParser로 전달."""
-        self._get_parser(port).feed(data)
-
-    def get_stats(self) -> dict:
-        stats = {}
-        for port, sp in self._parsers.items():
-            stats[f'port{port}'] = sp.stats
-        return stats
-
-
-# ═══════════════════════════════════════════════════════════════
-#  ITM SWO 프레임 파서
-# ═══════════════════════════════════════════════════════════════
-def parse_itm_swo_frame(frame: bytes,
-                         accumulator: ITMPortAccumulator,
-                         stats: dict) -> None:
-    """
-    ITM/SWO 원시 바이트 프레임을 파싱하여 포트별 페이로드를
-    ITMPortAccumulator로 전달.
-
-    ARM IHI0029E 스티뮬러스 패킷 포맷:
-      Bit 7-3 : 포트 주소 (5비트, 0-31)
-      Bit 2-1 : 페이로드 크기 (00=reserved, 01=1B, 10=2B, 11=4B)
-      Bit 0   : 1 (소스 패킷 마커)
-
-    ITM-06 fix: 올바른 비트 추출
-    ITM-07 fix: frame 전체 처리 (첫 패킷 후 return 제거)
-    """
-    i = 0
-    while i < len(frame):
-        hdr = frame[i]
-        i += 1
-
-        # ── 동기 패킷 (0x00 = null) ──────────────────
-        if hdr == 0x00:
-            continue
-
-        # ── 오버플로 패킷 (0x70) ─────────────────────
-        if hdr == 0x70:
-            stats['itm_overflow'] = stats.get('itm_overflow', 0) + 1
-            logger.warning("ITM overflow detected")
-            continue
-
-        # ── 소스(스티뮬러스) 패킷인지 확인 ───────────
-        if (hdr & 0x01) == 0:
-            # 소스 패킷이 아님 (timestamp, hardware source 등) → 스킵
-            # 타임스탬프 패킷: header & 0x0F == 0, 이하 가변 길이
-            # 단순 처리: 다음 바이트로
-            continue
-
-        # ── 올바른 포트·크기 추출 (ITM-06 fix) ───────
-        port      = (hdr >> 3) & 0x1F          # bits 7:3
-        size_bits = (hdr >> 1) & 0x03          # bits 2:1
-        size_map  = {0b01: 1, 0b10: 2, 0b11: 4}
-        size      = size_map.get(size_bits, 0)
-
-        if size == 0:
-            stats['parse_errors'] = stats.get('parse_errors', 0) + 1
-            continue
-
-        if i + size > len(frame):
-            # 프레임 끝에서 잘림 → 다음 호출에서 이어받지 못함
-            # (StreamingParser가 내부에서 처리)
-            stats['truncated'] = stats.get('truncated', 0) + 1
-            break
-
-        payload = frame[i:i + size]
-        i += size
-
-        # ── 포트별 누산기로 전달 (ITM-08 fix) ────────
-        stats['bytes_received'] = stats.get('bytes_received', 0) + size
-        accumulator.feed_port(port, payload)
-
-
-# ═══════════════════════════════════════════════════════════════
-#  추상 Collector
-# ═══════════════════════════════════════════════════════════════
+# ── 추상 기반 클래스 ─────────────────────────────────────────
 class BaseCollector(ABC):
+    """수신기 공통 인터페이스."""
 
-    def __init__(self, on_packet: PacketCallback):
-        self._on_packet  = on_packet
-        self._accumulator = ITMPortAccumulator(on_packet)
-        self._running    = False
-        self._thread: Optional[threading.Thread] = None
-        self.stats: dict = {'bytes_received': 0, 'itm_overflow': 0,
-                            'parse_errors': 0, 'truncated': 0,
-                            'connect_errors': 0}
-
-    @abstractmethod
-    def _connect(self) -> bool:
-        """하드웨어/소켓 연결. True=성공."""
-
-    @abstractmethod
-    def _disconnect(self) -> None:
-        """연결 해제."""
-
-    @abstractmethod
-    def _read_raw(self) -> Optional[bytes]:
-        """원시 바이트 한 청크 읽기. None=타임아웃/없음."""
-
-    def start(self) -> bool:
-        """수집 시작 (별도 스레드)."""
-        if not self._connect():
-            return False
-        self._running = True
-        self._thread  = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-        return True
-
-    def stop(self) -> None:
+    def __init__(self):
         self._running = False
-        self._disconnect()
-        if self._thread:
-            self._thread.join(timeout=3.0)
+        self._bytes_received = 0
+        self._packets_received = 0
 
-    def _loop(self) -> None:
-        """수집 루프 (스레드에서 실행)."""
-        while self._running:
-            raw = self._read_raw()
-            if raw:
-                self._process(raw)
+    @abstractmethod
+    def open(self) -> None:
+        """연결 열기."""
 
-    def _process(self, raw: bytes) -> None:
-        """원시 바이트를 ITM 파서로 전달."""
-        parse_itm_swo_frame(raw, self._accumulator, self.stats)
+    @abstractmethod
+    def close(self) -> None:
+        """연결 닫기."""
 
-    def get_port_stats(self) -> dict:
-        return self._accumulator.get_stats()
+    @abstractmethod
+    def stream(self) -> Iterator[bytes]:
+        """raw bytes 패킷 이터레이터."""
+
+    @property
+    def stats(self) -> dict:
+        return {
+            'bytes':   self._bytes_received,
+            'packets': self._packets_received,
+        }
+
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, *_):
+        self.close()
 
 
-# ═══════════════════════════════════════════════════════════════
-#  J-Link SWO Collector  (ITM-09 fix: StreamingParser 연결)
-# ═══════════════════════════════════════════════════════════════
+# ── J-Link ITM (SWO) 수신기 ──────────────────────────────────
 class JLinkCollector(BaseCollector):
     """
-    J-Link SWO를 통해 ITM 데이터를 수집.
-    pylink-square 라이브러리 필요: pip install pylink-square
+    J-Link SWO(ITM) 수신기.
+
+    pylink-square 라이브러리 사용:
+      pip install pylink-square>=1.2.0
+
+    SWO 속도: CPU 클럭 / 4 이상 권장
+      STM32F446RE @ 180MHz → SWO 45MHz 이상
+
+    ITM 채널:
+      0번 채널 — ClaudeRTOS-Insight Binary Protocol V4
+
+    사용:
+      collector = JLinkCollector(cpu_hz=180_000_000, swo_hz=4_500_000)
+      collector.open()
+      for pkt in collector.stream():
+          parser.feed(pkt)
     """
 
-    SWO_SPEED = 2_250_000   # 2.25 MHz
+    # Binary Protocol V4 sync word
+    SYNC_MAGIC = 0xDEAD
 
-    def __init__(self, on_packet: PacketCallback,
-                 device: str = "STM32F446RE",
-                 swd_speed_khz: int = 4000):
-        super().__init__(on_packet)
-        self._device   = device
-        self._speed    = swd_speed_khz
-        self._jlink    = None
+    def __init__(self,
+                 cpu_hz:    int = 180_000_000,
+                 swo_hz:    int = 4_500_000,
+                 itm_ch:    int = 0,
+                 device:    str = 'STM32F446RE',
+                 interface: str = 'SWD'):
+        super().__init__()
+        self._cpu_hz    = cpu_hz
+        self._swo_hz    = swo_hz
+        self._itm_ch    = itm_ch
+        self._device    = device
+        self._interface = interface
+        self._jlink     = None
+        self._buf       = bytearray()
 
-    def _connect(self) -> bool:
+    def open(self) -> None:
         try:
             import pylink
-            self._jlink = pylink.JLink()
-            self._jlink.open()
-            self._jlink.set_tif(pylink.enums.JLinkInterfaces.SWD)
-            self._jlink.connect(self._device, self._speed)
-            self._jlink.swo_start(self.SWO_SPEED)
-            # 포트 0(바이너리), 3(진단) 활성화
-            self._jlink.swo_enable(0b1001)   # 비트 0, 3
-            logger.info("J-Link connected: %s @ %d kHz SWD, SWO=%d Hz",
-                        self._device, self._speed, self.SWO_SPEED)
-            return True
         except ImportError:
-            logger.error("pylink-square not installed: pip install pylink-square")
-            self.stats['connect_errors'] += 1
-            return False
-        except Exception as e:
-            logger.error("J-Link connection failed: %s", e)
-            self.stats['connect_errors'] += 1
-            return False
+            raise ImportError(
+                "pylink-square 미설치.\n"
+                "설치: pip install pylink-square>=1.2.0\n"
+                "또는 UART 모드 사용: --port uart:/dev/ttyUSB0")
 
-    def _disconnect(self) -> None:
+        self._jlink = pylink.JLink()
+        self._jlink.open()
+
+        # SWD 인터페이스 + 타겟 연결
+        self._jlink.set_tif(pylink.enums.JLinkInterfaces.SWD)
+        self._jlink.connect(self._device, self._cpu_hz)
+
+        # SWO 활성화
+        self._jlink.swd_speed(self._swo_hz)
+        self._jlink.swo_start(self._swo_hz)
+        self._jlink.swo_flush()
+
+        # ITM 채널 0 활성화
+        self._jlink.set_trace_source(pylink.enums.JLinkTraceSource.ETM)
+        self._running = True
+        print(f"[JLink] 연결됨: {self._device} @ {self._cpu_hz//1_000_000}MHz, "
+              f"SWO {self._swo_hz//1_000_000}MHz")
+
+    def close(self) -> None:
+        self._running = False
         if self._jlink:
             try:
                 self._jlink.swo_stop()
@@ -246,204 +142,484 @@ class JLinkCollector(BaseCollector):
             except Exception:
                 pass
             self._jlink = None
+        print("[JLink] 연결 해제")
 
-    def _read_raw(self) -> Optional[bytes]:
-        if not self._jlink:
-            return None
-        try:
-            # ITM-07 fix: swo_read로 전체 데이터를 한 번에 읽음
-            data = self._jlink.swo_read(0, 4096, remove=True)
-            if data:
-                return bytes(data)
-            time.sleep(0.005)
-            return None
-        except Exception as e:
-            logger.debug("J-Link read error: %s", e)
-            self.stats['parse_errors'] += 1
-            return None
+    def stream(self) -> Iterator[bytes]:
+        """SWO 버퍼에서 ITM 패킷을 지속적으로 읽어 반환."""
+        POLL_INTERVAL = 0.001   # 1ms 폴링
+        MIN_PKT_SIZE  = 8       # Binary Protocol V4 최소 패킷 크기
 
-
-# ═══════════════════════════════════════════════════════════════
-#  OpenOCD TCP Collector  (ITM-10: 실제 구현)
-# ═══════════════════════════════════════════════════════════════
-class OpenOCDCollector(BaseCollector):
-    """
-    OpenOCD TCP ITM 수집.
-
-    OpenOCD 설정 예시 (openocd.cfg):
-        source [find interface/stlink.cfg]
-        source [find target/stm32f4x.cfg]
-        tpiu config internal /tmp/itm.fifo uart false 180000000 2250000
-        itm ports on
-
-    또는 tcl_port를 통한 제어:
-        openocd -f openocd.cfg -c "tpiu config ..."
-
-    이 클래스는 OpenOCD의 ITM raw capture TCP 포트(기본 3344)에서
-    SWO 바이트 스트림을 직접 읽는다.
-
-    OpenOCD 실행:
-        openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
-                -c "tpiu config internal - uart false 180000000 2250000" \
-                -c "tcl_port 6666"
-    그 후 별도 터미널:
-        nc localhost 3344  # SWO raw stream
-    """
-
-    def __init__(self, on_packet: PacketCallback,
-                 host: str = "localhost",
-                 port: int = 3344,
-                 timeout: float = 0.1):
-        super().__init__(on_packet)
-        self._host    = host
-        self._port    = port
-        self._timeout = timeout
-        self._sock: Optional[socket.socket] = None
-
-    def _connect(self) -> bool:
-        try:
-            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._sock.settimeout(self._timeout)
-            self._sock.connect((self._host, self._port))
-            logger.info("OpenOCD connected: %s:%d", self._host, self._port)
-            return True
-        except Exception as e:
-            logger.error("OpenOCD connection failed: %s", e)
-            self.stats['connect_errors'] += 1
-            return False
-
-    def _disconnect(self) -> None:
-        if self._sock:
+        while self._running:
             try:
-                self._sock.close()
-            except Exception:
-                pass
-            self._sock = None
+                # SWO 버퍼에서 최대 1024바이트 읽기
+                data = self._jlink.swo_read(0, 1024, remove=True)
+                if data:
+                    self._buf.extend(bytes(data))
+                    self._bytes_received += len(data)
 
-    def _read_raw(self) -> Optional[bytes]:
-        if not self._sock:
-            return None
-        try:
-            data = self._sock.recv(4096)
-            return data if data else None
-        except socket.timeout:
-            return None
-        except Exception as e:
-            logger.debug("OpenOCD read error: %s", e)
-            self.stats['parse_errors'] += 1
-            return None
+                    # sync word(0xDEAD)로 패킷 경계 찾기
+                    for pkt in self._extract_packets():
+                        self._packets_received += 1
+                        yield pkt
+                else:
+                    time.sleep(POLL_INTERVAL)
+
+            except Exception as e:
+                if self._running:
+                    print(f"[JLink] 수신 오류: {e}")
+                    time.sleep(0.1)
+
+    def _extract_packets(self) -> Iterator[bytes]:
+        """버퍼에서 완전한 패킷 추출."""
+        while len(self._buf) >= 4:
+            # sync word 탐색
+            idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC))
+            if idx < 0:
+                # sync word 없음 — 버퍼 최근 2바이트만 유지
+                self._buf = self._buf[-2:]
+                return
+            if idx > 0:
+                self._buf = self._buf[idx:]   # sync 이전 버림
+
+            # 헤더 파싱 (최소 10바이트: magic(2)+ver(1)+type(1)+seq(2)+ts(4))
+            if len(self._buf) < 10:
+                return
+            # 패킷 길이는 헤더 이후 데이터 크기 + CRC(4)
+            # 간단 휴리스틱: 다음 sync word까지를 패킷으로 처리
+            next_idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC), 2)
+            if next_idx > 0:
+                pkt = bytes(self._buf[:next_idx])
+                self._buf = self._buf[next_idx:]
+                yield pkt
+            else:
+                # 다음 sync 없음 — 버퍼 누적 대기
+                return
 
 
-# ═══════════════════════════════════════════════════════════════
-#  UART Collector
-# ═══════════════════════════════════════════════════════════════
+# ── UART 수신기 ───────────────────────────────────────────────
 class UARTCollector(BaseCollector):
     """
-    UART 시리얼 포트에서 ClaudeRTOS 바이너리 스트림을 수집.
+    UART 수신기.
 
-    UART 모드에서는 ITM SWO 패킷 래핑이 없으므로
-    바이트를 직접 StreamingParser로 전달 (포트 0 고정).
+    pyserial 라이브러리 사용:
+      pip install pyserial>=3.5  (requirements.txt에 포함)
 
-    pyserial 필요: pip install pyserial
+    사용:
+      collector = UARTCollector(port='/dev/ttyUSB0', baud=115200)
+      collector.open()
+      for pkt in collector.stream():
+          parser.feed(pkt)
     """
 
-    def __init__(self, on_packet: PacketCallback,
-                 port: str = "/dev/ttyUSB0",
-                 baudrate: int = 115200,
-                 timeout: float = 0.1):
-        super().__init__(on_packet)
-        self._port_name = port
-        self._baudrate  = baudrate
-        self._timeout   = timeout
-        self._serial    = None
-        # UART는 ITM 래핑 없이 직접 StreamingParser로
-        from parsers.binary_parser import BinaryParserV3, StreamingParser
-        self._stream_parser = StreamingParser(BinaryParserV3())
-        self._stream_parser.on_packet(on_packet)
+    SYNC_MAGIC = 0xDEAD
 
-    def _connect(self) -> bool:
+    def __init__(self,
+                 port:    str = '/dev/ttyUSB0',
+                 baud:    int = 115200,
+                 timeout: float = 1.0):
+        super().__init__()
+        self._port    = port
+        self._baud    = baud
+        self._timeout = timeout
+        self._serial  = None
+        self._buf     = bytearray()
+
+    def open(self) -> None:
         try:
             import serial
-            self._serial = serial.Serial(
-                port=self._port_name,
-                baudrate=self._baudrate,
-                timeout=self._timeout,
-            )
-            logger.info("UART connected: %s @ %d baud",
-                        self._port_name, self._baudrate)
-            return True
         except ImportError:
-            logger.error("pyserial not installed: pip install pyserial")
-            self.stats['connect_errors'] += 1
-            return False
-        except Exception as e:
-            logger.error("UART connection failed: %s", e)
-            self.stats['connect_errors'] += 1
-            return False
+            raise ImportError(
+                "pyserial 미설치.\n"
+                "설치: pip install pyserial>=3.5")
 
-    def _disconnect(self) -> None:
-        if self._serial:
-            try:
-                self._serial.close()
-            except Exception:
-                pass
+        import serial
+        self._serial = serial.Serial(
+            port     = self._port,
+            baudrate = self._baud,
+            timeout  = self._timeout,
+            bytesize = serial.EIGHTBITS,
+            parity   = serial.PARITY_NONE,
+            stopbits = serial.STOPBITS_ONE,
+        )
+        self._running = True
+        print(f"[UART] 연결됨: {self._port} @ {self._baud} baud")
+
+    def close(self) -> None:
+        self._running = False
+        if self._serial and self._serial.is_open:
+            self._serial.close()
             self._serial = None
+        print("[UART] 연결 해제")
 
-    def _read_raw(self) -> Optional[bytes]:
-        if not self._serial:
-            return None
-        try:
-            waiting = self._serial.in_waiting
-            if waiting > 0:
-                return self._serial.read(min(waiting, 4096))
-            time.sleep(0.005)
-            return None
-        except Exception as e:
-            logger.debug("UART read error: %s", e)
-            self.stats['parse_errors'] += 1
-            return None
+    def stream(self) -> Iterator[bytes]:
+        """UART에서 Binary Protocol 패킷을 지속적으로 읽어 반환."""
+        READ_SIZE = 256
 
-    def _process(self, raw: bytes) -> None:
-        """UART: ITM 파싱 없이 직접 StreamingParser로."""
-        self.stats['bytes_received'] = \
-            self.stats.get('bytes_received', 0) + len(raw)
-        self._stream_parser.feed(raw)
+        while self._running:
+            try:
+                data = self._serial.read(READ_SIZE)
+                if data:
+                    self._buf.extend(data)
+                    self._bytes_received += len(data)
+                    for pkt in self._extract_packets():
+                        self._packets_received += 1
+                        yield pkt
+            except Exception as e:
+                if self._running:
+                    print(f"[UART] 수신 오류: {e}")
+                    time.sleep(0.1)
+
+    def _extract_packets(self) -> Iterator[bytes]:
+        """버퍼에서 완전한 패킷 추출 (JLink와 동일 로직)."""
+        while len(self._buf) >= 4:
+            idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC))
+            if idx < 0:
+                self._buf = self._buf[-2:]
+                return
+            if idx > 0:
+                self._buf = self._buf[idx:]
+            if len(self._buf) < 10:
+                return
+            next_idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC), 2)
+            if next_idx > 0:
+                pkt = bytes(self._buf[:next_idx])
+                self._buf = self._buf[next_idx:]
+                yield pkt
+            else:
+                return
 
 
-# ═══════════════════════════════════════════════════════════════
-#  Factory
-# ═══════════════════════════════════════════════════════════════
-def create_collector(source: str,
-                     on_packet: PacketCallback,
-                     **kwargs) -> BaseCollector:
+# ── 시뮬레이션 수신기 ────────────────────────────────────────
+class SimulateCollector(BaseCollector):
     """
-    source 형식:
-      'jlink'              → J-Link SWO
-      'jlink:STM32F446RE'  → 디바이스 지정
-      'openocd'            → OpenOCD TCP (localhost:3344)
-      'openocd:host:port'  → 호스트:포트 지정
-      'uart:/dev/ttyUSB0'  → UART 시리얼
-      'uart:COM3:9600'     → 포트:보드레이트 지정
+    시뮬레이션 수신기 — 하드웨어 없이 테스트용.
+
+    integrated_demo.py --simulate-switch 와 동일한 데이터를 생성한다.
+    실제 하드웨어 없이 파이프라인 전체를 테스트할 때 사용.
     """
-    parts = source.split(':', 2)
-    kind  = parts[0].lower()
 
-    if kind == 'jlink':
-        device = parts[1] if len(parts) > 1 else kwargs.get('device', 'STM32F446RE')
-        return JLinkCollector(on_packet, device=device, **{
-            k: v for k, v in kwargs.items() if k not in ('device',)})
+    def __init__(self, scenario: str = 'deadlock', interval: float = 3.0):
+        super().__init__()
+        self._scenario = scenario
+        self._interval = interval
 
-    if kind == 'openocd':
-        host = parts[1] if len(parts) > 1 else kwargs.get('host', 'localhost')
-        port = int(parts[2]) if len(parts) > 2 else kwargs.get('port', 3344)
-        return OpenOCDCollector(on_packet, host=host, port=port)
+    def open(self) -> None:
+        self._running = True
+        print(f"[Simulate] 시뮬레이션 시작 (시나리오: {self._scenario})")
 
-    if kind == 'uart':
-        dev  = parts[1] if len(parts) > 1 else kwargs.get('port', '/dev/ttyUSB0')
-        baud = int(parts[2]) if len(parts) > 2 else kwargs.get('baudrate', 115200)
-        return UARTCollector(on_packet, port=dev, baudrate=baud)
+    def close(self) -> None:
+        self._running = False
+        print("[Simulate] 시뮬레이션 종료")
+
+    def stream(self) -> Iterator[bytes]:
+        """시나리오별 합성 스냅샷 생성."""
+        seq = 0
+        scenarios = {
+            'deadlock': self._gen_deadlock,
+            'stack':    self._gen_stack_overflow,
+            'heap':     self._gen_heap_exhaustion,
+        }
+        gen_fn = scenarios.get(self._scenario, self._gen_deadlock)
+
+        while self._running:
+            pkt = gen_fn(seq)
+            seq += 1
+            self._packets_received += 1
+            self._bytes_received   += len(pkt)
+            yield pkt
+            time.sleep(self._interval)
+
+    def _gen_deadlock(self, seq: int) -> bytes:
+        """데드락 시나리오 패킷 (dict 형태 — StreamingParser 우회)."""
+        import json
+        snap = {
+            '_sim': True, 'sequence': seq, 'snapshot_count': seq+1,
+            'timestamp_us': seq * 3_000_000,
+            'uptime_ms':    seq * 3000,
+            'cpu_usage':    85 + (seq % 10),
+            '_parser_stats': {},
+            'heap': {'free': 2000 - seq*50, 'min': 1800,
+                     'total': 8192, 'used_pct': 75 + seq},
+            'tasks': [
+                {'task_id':0,'name':'Task0','priority':5,'state':2,
+                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':200,'runtime_us':0},
+                {'task_id':1,'name':'Task1','priority':3,'state':2,
+                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':180,'runtime_us':0},
+            ]
+        }
+        return json.dumps(snap).encode()
+
+    def _gen_stack_overflow(self, seq: int) -> bytes:
+        import json
+        snap = {
+            '_sim': True, 'sequence': seq, 'snapshot_count': seq+1,
+            'timestamp_us': seq * 3_000_000, 'uptime_ms': seq * 3000,
+            'cpu_usage': 60, '_parser_stats': {},
+            'heap': {'free': 4000,'min': 3500,'total': 8192,'used_pct': 51},
+            'tasks': [
+                {'task_id':0,'name':'HighTask','priority':5,'state':0,
+                 'state_name':'Running','cpu_pct':60,
+                 'stack_hwm': max(5, 200 - seq*20), 'runtime_us': 0},
+            ]
+        }
+        return json.dumps(snap).encode()
+
+    def _gen_heap_exhaustion(self, seq: int) -> bytes:
+        import json
+        free = max(50, 4000 - seq * 300)
+        snap = {
+            '_sim': True, 'sequence': seq, 'snapshot_count': seq+1,
+            'timestamp_us': seq * 3_000_000, 'uptime_ms': seq * 3000,
+            'cpu_usage': 70, '_parser_stats': {},
+            'heap': {'free': free, 'min': free-100,
+                     'total': 8192, 'used_pct': int((8192-free)/8192*100)},
+            'tasks': [
+                {'task_id':0,'name':'AllocTask','priority':5,'state':0,
+                 'state_name':'Running','cpu_pct':70,'stack_hwm':150,'runtime_us':0},
+            ]
+        }
+        return json.dumps(snap).encode()
+
+
+# ── 팩토리 함수 ───────────────────────────────────────────────
+def Collector(port_str: str,
+              cpu_hz: int = 180_000_000,
+              **kwargs) -> BaseCollector:
+    """
+    포트 문자열로 적합한 수신기 반환.
+
+    포트 형식:
+      'jlink'                → JLinkCollector
+      'uart:/dev/ttyUSB0'   → UARTCollector(port='/dev/ttyUSB0')
+      'uart:COM3'           → UARTCollector(port='COM3')
+      'simulate'            → SimulateCollector
+      'simulate:stack'      → SimulateCollector(scenario='stack')
+
+    예시:
+      collector = Collector('jlink', cpu_hz=180_000_000)
+      collector = Collector('uart:/dev/ttyUSB0', baud=115200)
+      collector = Collector('simulate:deadlock')
+    """
+    # 접두사만 소문자 정규화 — 포트 경로는 대소문자 보존
+    port_lower = port_str.strip().lower()
+
+    if port_lower == 'jlink':
+        return JLinkCollector(cpu_hz=cpu_hz, **kwargs)
+
+    if port_lower.startswith('uart:'):
+        port = port_str.strip()[5:]  # 원본 대소문자 보존
+        baud = kwargs.pop('baud', 115200)
+        return UARTCollector(port=port, baud=baud, **kwargs)
+
+    if port_lower.startswith('simulate'):
+        scenario = port_lower.split(':')[1] if ':' in port_lower else 'deadlock'
+        return SimulateCollector(scenario=scenario, **kwargs)
 
     raise ValueError(
-        f"Unknown source '{source}'. "
-        "Use: jlink, openocd, uart:/dev/ttyUSB0, uart:COM3:115200"
-    )
+        f"알 수 없는 포트: '{port_str}'\n"
+        f"지원 형식: jlink / uart:/dev/ttyUSB0 / simulate[:deadlock|stack|heap]")
+
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  integrated_demo.py 호환 API
+#  (ITM SWO 프레임 파싱 + 레거시 create_collector)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import struct as _struct
+from typing import Callable
+
+
+class ITMPortAccumulator:
+    """
+    ITM SWO 바이트 스트림 → ParsedSnapshot / ParsedFault 콜백.
+
+    ITM 채널 0 데이터를 누적하여 완전한 Binary Protocol V4 패킷이
+    완성되면 BinaryParserV3로 파싱 후 on_packet 콜백을 호출한다.
+
+    integrated_demo.py 호환: on_packet(ParsedSnapshot | ParsedFault)
+    """
+
+    def __init__(self, on_packet: Callable):
+        self._cb  = on_packet
+        self._buf = bytearray()
+        # BinaryParserV3 지연 import (순환 import 방지)
+        self._parser = None
+
+    def _get_parser(self):
+        if self._parser is None:
+            from parsers.binary_parser import BinaryParserV3
+            self._parser = BinaryParserV3()
+        return self._parser
+
+    def feed(self, data: bytes) -> None:
+        """바이트 데이터 추가 후 완전한 패킷 파싱."""
+        self._buf.extend(data)
+        self._flush()
+
+    def flush(self) -> None:
+        """
+        버퍼에 남은 데이터를 강제 파싱.
+
+        단일 패킷 테스트나 스트림 종료 시 호출.
+        다음 SYNC가 없어도 버퍼 전체를 BinaryParserV3로 직접 파싱.
+        """
+        self._flush(force=True)
+
+    def _flush(self, force: bool = False) -> None:
+        """
+        SYNC 경계 기반 패킷 추출.
+
+        force=True: 다음 SYNC 없어도 버퍼 전체를 파싱 시도 (단일 패킷용)
+        force=False: 다음 SYNC 발견 시에만 파싱 (스트리밍 기본 동작)
+        """
+        SYNC = b'\xc1\xad'   # Binary Protocol V4: MAGIC1=0xC1, MAGIC2=0xAD
+        while len(self._buf) >= 4:
+            idx = self._buf.find(SYNC)
+            if idx < 0:
+                self._buf = self._buf[-1:]
+                return
+            if idx > 0:
+                self._buf = self._buf[idx:]
+            next_idx = self._buf.find(SYNC, 2)
+            if next_idx < 0:
+                if force:
+                    raw_pkt = bytes(self._buf)
+                    self._buf = bytearray()
+                    if raw_pkt:
+                        result = self._get_parser().parse_packet(raw_pkt)
+                        if result is not None:
+                            self._cb(result)
+                return
+            raw_pkt = bytes(self._buf[:next_idx])
+            self._buf = self._buf[next_idx:]
+            if raw_pkt:
+                result = self._get_parser().parse_packet(raw_pkt)
+                if result is not None:
+                    self._cb(result)
+
+
+def parse_itm_swo_frame(frame: bytes,
+                         acc: ITMPortAccumulator,
+                         stats: dict) -> None:
+    """
+    ITM SWO 프레임을 파싱하여 ITMPortAccumulator에 전달.
+
+    ITM 패킷 형식 (ARMv7-M):
+      0x00            — sync / padding → 스킵
+      0x70            — ITM overflow → itm_overflow 카운터 증가
+      hdr & 0x03 > 0  — Stimulus 패킷: size = 1/2/4B
+      hdr bit[7:3]    — port number (ClaudeRTOS = 0)
+
+    Stats keys:
+      frames       — 호출 횟수
+      bytes_ch0    — 채널 0으로 수신된 바이트
+      itm_overflow — 오버플로 패킷 수
+      malformed    — 잘못된 패킷 수
+    """
+    stats.setdefault('frames', 0)
+    stats.setdefault('bytes_ch0', 0)
+    stats.setdefault('itm_overflow', 0)
+    stats.setdefault('malformed', 0)
+    stats['frames'] += 1
+
+    i = 0
+    while i < len(frame):
+        hdr = frame[i]
+        i += 1
+
+        if hdr == 0x00:
+            # sync / padding → 스킵
+            continue
+
+        if hdr == 0x70:
+            # ITM 오버플로 패킷
+            stats['itm_overflow'] += 1
+            continue
+
+        # Stimulus (Software) 패킷
+        size_bits = hdr & 0x03
+        port      = (hdr >> 3) & 0x1F
+
+        if size_bits == 0b01:
+            sz = 1
+        elif size_bits == 0b10:
+            sz = 2
+        elif size_bits == 0b11:
+            sz = 4
+        else:
+            stats['malformed'] += 1
+            continue
+
+        # wrap_itm 형식: [hdr(1B)][data(1B)] 인터리브
+        # → 각 ITM 헤더 다음에 실제 데이터는 항상 1바이트
+        # (size_bits가 4를 가리켜도 wrap_itm은 1바이트씩 감쌈)
+        if i >= len(frame):
+            stats['malformed'] += 1
+            break
+
+        data = frame[i:i + 1]   # 항상 1바이트씩 읽기
+        i   += 1
+
+        if port == 0:
+            stats['bytes_ch0'] += 1
+            acc.feed(data)
+        elif port == 1:
+            # Ch1: Fault 패킷 (ch0과 동일 acc로 병합)
+            stats.setdefault('bytes_ch1', 0)
+            stats['bytes_ch1'] += 1
+            acc.feed(data)
+
+
+def create_collector(source: str,
+                     on_packet: Callable[[bytes], None],
+                     **kwargs):
+    """
+    레거시 팩토리 — integrated_demo.py 호환.
+
+    source:
+      'jlink'            → JLinkCollector 래퍼
+      'uart:/dev/...'    → UARTCollector 래퍼
+      'simulate'         → SimulateCollector 래퍼
+      'validate'         → DummyCollector (검증 전용)
+
+    반환: start() / stop() 메서드를 가진 객체
+    """
+    return _LegacyCollectorWrapper(source, on_packet, **kwargs)
+
+
+class _LegacyCollectorWrapper:
+    """create_collector() 반환 객체 — start/stop 인터페이스."""
+
+    def __init__(self, source: str, on_packet: Callable, **kwargs):
+        self._source    = source
+        self._cb        = on_packet
+        self._collector = None
+        self._thread    = None
+        self._kwargs    = kwargs
+
+    def start(self) -> bool:
+        import threading
+        try:
+            self._collector = Collector(self._source, **self._kwargs)
+            self._collector.open()
+        except Exception as e:
+            print(f"[Collector] 시작 실패: {e}")
+            return False
+        self._thread = threading.Thread(
+            target=self._run, daemon=True)
+        self._thread.start()
+        return True
+
+    def _run(self):
+        try:
+            for raw in self._collector.stream():
+                self._cb(raw)
+        except Exception:
+            pass
+
+    def stop(self):
+        if self._collector:
+            self._collector.close()
+        if self._thread:
+            self._thread.join(timeout=2)

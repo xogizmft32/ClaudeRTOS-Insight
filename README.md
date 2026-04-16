@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-4.9.7-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-4.9.8-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -18,7 +18,7 @@ CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 
 ```
 사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
 AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
-결과  → v2.3 → v4.9.7, 135개 파일, 20/20 검증 통과
+결과  → v2.3 → v4.9.8, 135개 파일, 20/20 검증 통과
 ```
 
 ---
@@ -228,6 +228,9 @@ host/
   ai/                rtos_debugger, response_parser, response_cache
     providers/       anthropic, openai, google, ollama
     hallucination_guard.py
+    claude_agent_provider.py    # Agent SDK 에이전트 루프
+    gemini_cli_provider.py      # Gemini CLI headless
+    codex_cli_provider.py       # OpenAI Codex CLI headless
   analysis/          analyzer, correlation_engine, state_machine
                      resource_graph, orchestrator, causal_graph
                      time_normalizer, event_queue, analysis_context
@@ -340,6 +343,7 @@ Protocol validation:    20/20 PASS
 분석 파이프라인:         < 1.08ms/사이클 (N100 기준, 추정치)
 AI context:             ~111 tokens
 Hallucination Guard:    trust_score 자동 산출
+에이전트 파이프라인:     59/59 PASS (7개 Provider 전체)
 주장성 '보장' 표현:      전체 문서 없음 (추정치·설계상·확인됨으로 대체)
 ```
 

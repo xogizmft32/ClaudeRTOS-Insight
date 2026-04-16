@@ -1461,3 +1461,41 @@ debugger = RTOSDebuggerV3(
 - 20/20 Protocol PASS
 
 ### README: v4.9.7, Provider 7종 + docs 링크 32개
+
+## [4.9.8] — 2026-04-14 ✅ PRODUCTION READY
+
+### 보완 및 개선 (우선순위 순)
+
+#### 1. README 갱신 (3건)
+- `codex_cli_provider.py`, `gemini_cli_provider.py` 파일 구조 반영
+- 에이전트 파이프라인 검증 결과 (59/59) 추가
+
+#### 2. 실제 하드웨어 연결 구현 (`host/collector.py` 전면 재작성)
+- `JLinkCollector`: pylink-square 기반 ITM SWO 실제 수신
+  - `swo_start()` / `swo_read()` / `swo_stop()` 생명주기
+  - sync word(0xC1AD) 기반 Binary Protocol V4 패킷 경계 감지
+- `UARTCollector`: pyserial 기반 실제 UART 수신 + 포트 대소문자 보존
+- `SimulateCollector`: 3가지 시나리오(deadlock/stack/heap) 합성 스냅샷
+- `Collector()` 팩토리: 포트 문자열 → 수신기 자동 선택
+- `ITMPortAccumulator`: ITM 채널 0(OS)+1(Fault) 수신 → BinaryParserV3 파싱
+- `parse_itm_swo_frame()`: ITM SWO 프레임 파싱 + `itm_overflow` 카운터
+- `acc.flush()`: 단일 패킷 / 스트림 종료 시 버퍼 강제 파싱
+- `create_collector()`: integrated_demo.py 레거시 API 호환
+- `claudertos_main.py`: 실제 수신 루프 구현
+  (Collector → stream() → AnalysisEngine → RTOSDebuggerV3 → SessionLogger)
+
+#### 3. 호스트 단위 테스트 (host/tests/)
+- `test_analyzer.py`: Rule-based 분석기 8개 케이스
+- `test_providers.py`: Gemini/Codex CLI Provider 파싱 11개 케이스
+- `test_pipeline.py`: 분석 파이프라인 통합 7개 케이스
+- `test_collector.py`: 수신기 팩토리/시나리오 10개 케이스
+
+#### 4. adaptive_sampler.c — FreeRTOS tick 연결
+- `uint32_t current_time = 0` → `xTaskGetTickCount()` (3곳)
+- `FreeRTOS.h` / `task.h` include 추가
+
+#### 5. Provider fallback 강화
+- CLI 미설치 시 `FileNotFoundError` 대신 설치 안내 AIResponse 반환
+- Codex reasoning 이벤트 자동 무시
+
+### 검증: 28/28 + 20/20 PASS

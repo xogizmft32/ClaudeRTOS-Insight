@@ -203,6 +203,7 @@ def run_validation() -> bool:
     stats_itm = {}
     bin_pkt = build_os_packet(10,[],30,5000,4800,8192,500)
     parse_itm_swo_frame(wrap_itm(bin_pkt,0), acc, stats_itm)
+    acc.flush()
     if len(res_itm)==1 and isinstance(res_itm[0], ParsedSnapshot):
         print("   ✅ ITM SWO 프레임 → 패킷 복원 성공"); passed+=1
     else:
@@ -271,7 +272,9 @@ def run_switch_simulation() -> bool:
     print("\n[Phase 1] ITM 모드")
     itm_res=[]; acc=ITMPortAccumulator(on_packet=lambda r: itm_res.append(r)); s={}
     parse_itm_swo_frame(wrap_itm(snap_pkt,0), acc, s)
+    acc.flush()
     parse_itm_swo_frame(wrap_itm(fault_pkt,1), acc, s)
+    acc.flush()
     if len(itm_res)==2 and itm_res[0].type=='os_snapshot' and itm_res[1].type=='fault':
         print("   ✅ ITM: OS snapshot + Fault 수신"); passed+=1
     else:
@@ -280,6 +283,7 @@ def run_switch_simulation() -> bool:
     print("\n[Phase 2] ITM 오버플로 → 복구")
     itm_res2=[]; acc2=ITMPortAccumulator(on_packet=lambda r: itm_res2.append(r)); s2={}
     parse_itm_swo_frame(bytes([0x70]*5)+wrap_itm(snap_pkt,0), acc2, s2)
+    acc2.flush()
     if s2.get('itm_overflow',0)==5 and len(itm_res2)==1:
         print(f"   ✅ 오버플로 5회 감지, 이후 복구"); passed+=1
     else:
