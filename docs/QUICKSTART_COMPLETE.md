@@ -19,7 +19,8 @@
 ### Software (Linux/Ubuntu)
 ```bash
 sudo apt install gcc-arm-none-eabi make python3 python3-pip
-pip3 install anthropic   # or: openai / google-generativeai
+pip3 install -r host/requirements.txt  # 모든 의존성 한번에 설치
+# (개별 설치 시) pip3 install anthropic   # or: openai / google-generativeai
 ```
 
 ---
@@ -28,7 +29,7 @@ pip3 install anthropic   # or: openai / google-generativeai
 
 ```bash
 tar -xzf ClaudeRTOS-Insight--FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0   # extracted directory name
+cd ClaudeRTOS-Insight-v2.5.0 *(release: v4.9.8)*   # extracted directory name
 
 # Auto-integrate into your project
 python3 install.py --project /path/to/your_project

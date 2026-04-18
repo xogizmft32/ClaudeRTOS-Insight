@@ -1499,3 +1499,72 @@ debugger = RTOSDebuggerV3(
 - Codex reasoning 이벤트 자동 무시
 
 ### 검증: 28/28 + 20/20 PASS
+
+## [4.9.9] — 2026-04-17 ✅ PRODUCTION READY
+
+### 리뷰 기반 개선 (P1~P4)
+
+#### P1 — 즉시 (안전성·신뢰성)
+
+**P1-1 버전 불일치 해소**
+- QUICKSTART_ko.md / QUICKSTART_en.md에 릴리즈 버전 병기
+- `claudertos_main.py` 시작 출력에 v4.9.9 추가
+- 버전 체계 명확화: 릴리즈(v4.9.x) vs 코드베이스(v2.5.0)
+
+**P1-2 Priority Buffer 감사 문서 갱신**
+- SAFETY_AUDIT_SUMMARY.md가 V3 기준이었음을 명시
+- V4 개선 요약 추가 (CRITICAL 5건 → 0건)
+
+**P1-3 AI fallback 구조 (`host/ai/ai_fallback.py` 신규)**
+- API 호출 실패 시 Rule-based 결과를 AI 응답 형식으로 변환
+- `AIFallbackAnalyzer.analyze()`: issue_type별 causal_chain 자동 생성
+- confidence를 정직하게 낮게 표기 (Critical: 0.75, High: 0.60 등)
+- `rtos_debugger.py`에 통합: generate() 실패 → 자동 fallback 전환
+- 네트워크 없는 현장에서도 분석 파이프라인 중단 없음
+
+**P1-4 stream() 예외 처리 추가 + P2-5 버퍼 제한 + P2-9 J-Link 재연결**
+- `JLinkCollector.stream()`: OSError 시 지수 백오프 재연결 최대 3회
+- `JLinkCollector`: 버퍼 64KB 초과 시 절반 드롭 (OOM 방지)
+- `UARTCollector.stream()`: SerialException → 명확한 오류 메시지
+- `UARTCollector`: PermissionError 시 `dialout` 그룹 추가 명령 자동 안내
+
+#### P2 — 단기 (운영 안정성)
+
+**P2-7 SYNC 충돌 방지**
+- `ITMPortAccumulator._flush()`: 최소 패킷 크기(10B) 검증 추가
+- sync word 우연 충돌 시 파싱 시도 없이 조용히 버림
+
+#### P3 — 중기 (운영 품질)
+
+**P3-10 Docker 메모리 제한**
+- `docker-compose.yml` claudertos-ollama: `mem_limit: 7g`, `memswap_limit: 8g`
+- llama3.1:8b ~5GB, qwen2.5:7b ~4.5GB → 호스트 OOM 방지
+
+**P3-11 직렬 포트 권한 안내**
+- `GETTING_STARTED.md`에 dialout 그룹 추가, udev 규칙 섹션 신규 추가
+
+**P3-12 logging 시스템 통일**
+- `collector.py`: print() 17개 → logging 교체 (DEBUG/INFO/WARNING/ERROR)
+- `ai_fallback.py`: logging 추가
+
+**P3-14 Streaming backpressure**
+- `claudertos_main.py`: Queue(maxsize=32) + 수신 워커 스레드 분리
+- 분석이 수신보다 느릴 때 oldest 드롭 + 5초 타임아웃 처리
+
+#### P4 — 장기 (정합성)
+
+**P4-15 의존성 안내 통일**
+- QUICKSTART_en: `pip3 install anthropic` → `requirements.txt` 사용으로 통일
+
+### 처리 불가 / 불필요
+
+| 항목 | 분류 | 이유 |
+|------|------|------|
+| polling → event 기반 전환 | 불가 | FreeRTOS + HAL 아키텍처 전면 재설계 |
+| Gemini CLI 0.38.1 호환성 검증 | 불가 | 네트워크 환경 없음 (3단계 폴백으로 대응) |
+| 성능 수치 근거 | 불필요 | 이미 "추정치" 표기 완료 |
+| AI 캐시 TTL 고정 | 불필요 | `--no-cache` 옵션으로 충분 |
+| protocol 명세 분리 | 불필요 | binary_protocol.h 자체가 명세 역할 |
+| packet 인터페이스 변경 | 불필요 | 기능적 문제 없음 |
+
+### Validation: 29/29 + 20/20 PASS

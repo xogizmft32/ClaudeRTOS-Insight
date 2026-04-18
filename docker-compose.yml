@@ -66,6 +66,8 @@ services:
   # docker-compose up claudertos-ollama 로 먼저 시작
   claudertos-ollama:
     image: ollama/ollama:latest
+    mem_limit: 7g          # llama3.1:8b ~5GB, qwen2.5:7b ~4.5GB
+    memswap_limit: 8g      # swap 포함 상한 (OOM 방지)
     container_name: claudertos-ollama
     profiles:
       - ollama   # docker-compose --profile ollama up 으로만 시작

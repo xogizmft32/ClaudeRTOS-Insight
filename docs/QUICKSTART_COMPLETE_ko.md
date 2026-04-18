@@ -57,7 +57,7 @@ RAM:    2GB 이상 (N100 권장)
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-vX.X.X-FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0   # 압축 해제 후 생성되는 디렉터리명
+cd ClaudeRTOS-Insight-v2.5.0 *(release: v4.9.8)*   # 압축 해제 후 생성되는 디렉터리명
 
 # 가상환경 활성화 (위에서 생성한 경우)
 source .venv/bin/activate

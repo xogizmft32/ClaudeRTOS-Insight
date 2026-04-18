@@ -22,6 +22,9 @@ StreamingParser에 공급한다.
 """
 
 from __future__ import annotations
+import logging
+
+_log = logging.getLogger(__name__)
 
 import os
 import struct
@@ -130,7 +133,7 @@ class JLinkCollector(BaseCollector):
         # ITM 채널 0 활성화
         self._jlink.set_trace_source(pylink.enums.JLinkTraceSource.ETM)
         self._running = True
-        print(f"[JLink] 연결됨: {self._device} @ {self._cpu_hz//1_000_000}MHz, "
+        _log.info("[JLink] 연결됨: {self._device} @ {self._cpu_hz//1_000_000}MHz, "
               f"SWO {self._swo_hz//1_000_000}MHz")
 
     def close(self) -> None:
@@ -142,31 +145,61 @@ class JLinkCollector(BaseCollector):
             except Exception:
                 pass
             self._jlink = None
-        print("[JLink] 연결 해제")
+        _log.info("[JLink] 연결 해제")
+
+    _JLINK_RECONNECT_MAX = 3     # J-Link 재연결 최대 시도 횟수
+    _BUF_MAX_BYTES       = 65536 # 호스트 버퍼 최대 크기 (64KB)
+    _POLL_INTERVAL       = 0.001 # 1ms 폴링
 
     def stream(self) -> Iterator[bytes]:
-        """SWO 버퍼에서 ITM 패킷을 지속적으로 읽어 반환."""
-        POLL_INTERVAL = 0.001   # 1ms 폴링
-        MIN_PKT_SIZE  = 8       # Binary Protocol V4 최소 패킷 크기
+        """
+        SWO 버퍼에서 ITM 패킷을 지속적으로 읽어 반환.
+
+        연결 오류 발생 시 최대 3회 재연결 시도.
+        버퍼가 64KB 초과 시 오래된 데이터부터 절반 제거(backpressure).
+        """
+        reconnect_count = 0
 
         while self._running:
             try:
-                # SWO 버퍼에서 최대 1024바이트 읽기
                 data = self._jlink.swo_read(0, 1024, remove=True)
                 if data:
                     self._buf.extend(bytes(data))
                     self._bytes_received += len(data)
 
-                    # sync word(0xDEAD)로 패킷 경계 찾기
+                    # 버퍼 크기 제한 (overflow 방지)
+                    if len(self._buf) > self._BUF_MAX_BYTES:
+                        drop = len(self._buf) // 2
+                        self._buf = self._buf[drop:]
+                        _log.warning("[JLink] 버퍼 초과 → {drop}B 드롭")
+
                     for pkt in self._extract_packets():
                         self._packets_received += 1
                         yield pkt
+                    reconnect_count = 0  # 성공 시 재시도 카운터 리셋
                 else:
-                    time.sleep(POLL_INTERVAL)
+                    time.sleep(self._POLL_INTERVAL)
+
+            except (OSError, RuntimeError) as e:
+                # 연결 끊김 — 재연결 시도
+                if not self._running:
+                    break
+                reconnect_count += 1
+                if reconnect_count > self._JLINK_RECONNECT_MAX:
+                    _log.error("[JLink] 재연결 {self._JLINK_RECONNECT_MAX}회 실패 — 수신 중단")
+                    self._running = False
+                    break
+                _log.warning("[JLink] 오류: {e} — 재연결 시도 {reconnect_count}/{self._JLINK_RECONNECT_MAX}")
+                time.sleep(1.0 * reconnect_count)  # 지수 백오프
+                try:
+                    self._jlink.swo_flush()
+                    self._jlink.swo_start(self._swo_hz)
+                except Exception:
+                    pass
 
             except Exception as e:
                 if self._running:
-                    print(f"[JLink] 수신 오류: {e}")
+                    _log.error("[JLink] 예기치 않은 오류: {e}")
                     time.sleep(0.1)
 
     def _extract_packets(self) -> Iterator[bytes]:
@@ -242,31 +275,60 @@ class UARTCollector(BaseCollector):
             stopbits = serial.STOPBITS_ONE,
         )
         self._running = True
-        print(f"[UART] 연결됨: {self._port} @ {self._baud} baud")
+        _log.info("[UART] 연결됨: {self._port} @ {self._baud} baud")
 
     def close(self) -> None:
         self._running = False
         if self._serial and self._serial.is_open:
             self._serial.close()
             self._serial = None
-        print("[UART] 연결 해제")
+        _log.info("[UART] 연결 해제")
+
+    _BUF_MAX_BYTES = 65536  # 64KB 버퍼 상한
 
     def stream(self) -> Iterator[bytes]:
-        """UART에서 Binary Protocol 패킷을 지속적으로 읽어 반환."""
-        READ_SIZE = 256
+        """
+        UART에서 Binary Protocol 패킷을 지속적으로 읽어 반환.
+
+        직렬 포트 오류(케이블 탈거, 권한 문제) 시 명확한 메시지와 함께 중단.
+        버퍼 64KB 초과 시 오래된 데이터 절반 제거.
+        """
+        import serial
 
         while self._running:
             try:
-                data = self._serial.read(READ_SIZE)
+                data = self._serial.read(256)
                 if data:
                     self._buf.extend(data)
                     self._bytes_received += len(data)
+
+                    # 버퍼 크기 제한
+                    if len(self._buf) > self._BUF_MAX_BYTES:
+                        drop = len(self._buf) // 2
+                        self._buf = self._buf[drop:]
+                        _log.warning("[UART] 버퍼 초과 → {drop}B 드롭")
+
                     for pkt in self._extract_packets():
                         self._packets_received += 1
                         yield pkt
+
+            except serial.SerialException as e:
+                _log.error("[UART] 포트 오류: {e}")
+                _log.info("  힌트: sudo usermod -aG dialout $USER && newgrp dialout")
+                self._running = False
+                break
+            except PermissionError as e:
+                _log.error("[UART] 권한 오류: {e}")
+                _log.info("  힌트: sudo chmod 666 {self._port}  또는  sudo usermod -aG dialout $USER")
+                self._running = False
+                break
+            except OSError as e:
+                if self._running:
+                    _log.warning("[UART] OS 오류: {e} — 재시도 중...")
+                    time.sleep(0.5)
             except Exception as e:
                 if self._running:
-                    print(f"[UART] 수신 오류: {e}")
+                    _log.error("[UART] 예기치 않은 오류: {e}")
                     time.sleep(0.1)
 
     def _extract_packets(self) -> Iterator[bytes]:
@@ -305,11 +367,11 @@ class SimulateCollector(BaseCollector):
 
     def open(self) -> None:
         self._running = True
-        print(f"[Simulate] 시뮬레이션 시작 (시나리오: {self._scenario})")
+        _log.debug("[Simulate] 시작 (시나리오: {self._scenario})")
 
     def close(self) -> None:
         self._running = False
-        print("[Simulate] 시뮬레이션 종료")
+        _log.debug("[Simulate] 종료")
 
     def stream(self) -> Iterator[bytes]:
         """시나리오별 합성 스냅샷 생성."""
@@ -486,17 +548,18 @@ class ITMPortAccumulator:
                 if force:
                     raw_pkt = bytes(self._buf)
                     self._buf = bytearray()
-                    if raw_pkt:
+                    if raw_pkt and len(raw_pkt) >= 10:
                         result = self._get_parser().parse_packet(raw_pkt)
                         if result is not None:
                             self._cb(result)
                 return
             raw_pkt = bytes(self._buf[:next_idx])
             self._buf = self._buf[next_idx:]
-            if raw_pkt:
+            if raw_pkt and len(raw_pkt) >= 10:  # 최소 헤더 크기 검증
                 result = self._get_parser().parse_packet(raw_pkt)
                 if result is not None:
                     self._cb(result)
+                # parse 실패는 sync 충돌 또는 손상 패킷 → 조용히 버림
 
 
 def parse_itm_swo_frame(frame: bytes,

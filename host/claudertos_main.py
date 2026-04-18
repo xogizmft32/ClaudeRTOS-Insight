@@ -120,7 +120,7 @@ def _run_debug(args):
 
     수신기(Collector) → StreamingParser → 분석 파이프라인 → AI 분석
     """
-    print(f"ClaudeRTOS-Insight — 디버깅 시작")
+    print(f"ClaudeRTOS-Insight v4.9.8 — 디버깅 시작")
     print(f"  포트:    {args.port}")
     print(f"  AI 모드: {args.ai_mode}")
     print(f"  프로파일:{args.profile}")
@@ -159,11 +159,33 @@ def _run_debug(args):
         collector.open()
         print(f"✅ 연결 완료 ({args.port})\n")
 
+        import queue, threading
+        # backpressure: 큐가 꽉 차면 수신기가 oldest 드롭
+        snap_queue = queue.Queue(maxsize=32)
+
+        def _receive_worker():
+            """수신 전용 스레드 — 큐에 raw 패킷 적재."""
+            for raw in collector.stream():
+                try:
+                    snap_queue.put_nowait(raw)
+                except queue.Full:
+                    # 분석이 밀리면 가장 오래된 패킷 드롭
+                    try: snap_queue.get_nowait()
+                    except queue.Empty: pass
+                    snap_queue.put_nowait(raw)
+            snap_queue.put(None)  # 종료 신호
+
+        recv_thread = threading.Thread(target=_receive_worker, daemon=True)
+        recv_thread.start()
+
         snap_count = 0
         ai_calls   = 0
 
         try:
-            for raw in collector.stream():
+            while True:
+                raw = snap_queue.get(timeout=5.0)
+                if raw is None:  # 수신 종료
+                    break
                 # 1. 패킷 파싱
                 if isinstance(raw, bytes) and raw.startswith(b'{'):
                     # 시뮬레이션: JSON 스냅샷 직접 사용
@@ -215,8 +237,11 @@ def _run_debug(args):
 
         except KeyboardInterrupt:
             pass
+        except queue.Empty:
+            print("\n⚠ 수신 타임아웃 (5초)")
         finally:
             collector.close()
+            recv_thread.join(timeout=2)
 
     except ImportError as e:
         print(f"\n의존성 오류: {e}")

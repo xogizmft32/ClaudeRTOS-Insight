@@ -44,6 +44,7 @@ except ImportError:
     except ImportError:
         _RR = None
 from .hallucination_guard  import HallucinationGuard
+from .ai_fallback          import AIFallbackAnalyzer
 from patterns.session_learner import SessionLearner
 from .providers.base import AITier
 
@@ -235,7 +236,19 @@ class RTOSDebuggerV3:
                 return {**cached.response_dict,
                         '_cache_hit': True, '_cost_saved': cached.cost_saved}
 
-        resp = self._provider.generate(system, ctx_json, max_tok, tier)
+        # AI 호출 — 실패 시 Rule-based fallback 자동 전환
+        try:
+            resp = self._provider.generate(system, ctx_json, max_tok, tier)
+        except Exception as _ai_err:
+            import warnings
+            warnings.warn(
+                f"AI 분석 실패 ({type(_ai_err).__name__}: {_ai_err}) "
+                "— Rule-based fallback 모드 활성화"
+            )
+            return self._fallback.analyze(
+                snap, issues,
+                reason=f"{type(_ai_err).__name__}: {_ai_err}"
+            )
 
         # 캐시 저장
         if issues:
@@ -285,10 +298,13 @@ class RTOSDebuggerV3:
             timeline_events=timeline_events or [],
             ai_mode='realtime', transport=transport,
         )
-        resp = self._provider.generate(
-            SYSTEM_PROMPT_JSON, ctx_json, 500, AITier.TIER1
-        )
-        return resp.to_dict()
+        try:
+            resp = self._provider.generate(
+                SYSTEM_PROMPT_JSON, ctx_json, 500, AITier.TIER1
+            )
+            return resp.to_dict()
+        except Exception as _e:
+            return {'fault_analysis': f'AI 비가용: {_e}', '_fallback': True}
 
     def debug_batch(self,
                     snap:            Dict,

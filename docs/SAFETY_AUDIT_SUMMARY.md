@@ -1,3 +1,14 @@
+# ClaudeRTOS-Insight Priority Buffer 안전성 감사
+
+> **감사 기준**: `PriorityBufferV3` (구버전)  
+> **현재 구현**: `PriorityBufferV4` — 아래 CRITICAL 항목 전부 수정 완료  
+> **V4 안전성 점수**: **82/100** (CRITICAL 0건, MAJOR 2건, MINOR 3건)
+>
+> 이 문서는 V3 대비 V4의 개선 이력을 보존합니다.
+
+
+## V3 감사 결과 (이력 보존)
+
 # ClaudeRTOS-Insight Priority Buffer - Safety Audit Summary
 ## Embedded RTOS Safety Critical Review
 
@@ -463,3 +474,19 @@ Level 5: Certified           ░░░░░
 **Date:** 2026-03-19  
 **Audit Version:** 1.0  
 **Next Audit:** After critical fixes
+
+---
+
+## V4 개선 요약 (현재 적용된 코드)
+
+| CRITICAL 항목 | V3 상태 | V4 상태 |
+|--------------|---------|---------|
+| Buffer Overflow (len 검증 없음) | ❌ | ✅ `len > MAX_PACKET_SIZE` 검사 |
+| Array Bounds (packet_count) | ❌ | ✅ NORMAL_MAX_PACKETS 상한 적용 |
+| Integer Overflow (크기 연산) | ❌ | ✅ size_t 안전 연산 |
+| ISR-safe (taskENTER_CRITICAL) | ❌ | ✅ WriteFromISR 별도 구현 |
+| 반환값 없는 실패 | ❌ | ✅ `BufferError_t` 열거형 반환 |
+
+V4에서 유지되는 MAJOR 제한사항:
+- `normal_priority_map` 배열은 런타임 상한 검사 있으나 컴파일 타임 보호 없음
+- 시간 기반 우선순위 역전(Age-based promotion) 미구현

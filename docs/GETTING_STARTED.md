@@ -239,3 +239,48 @@ uint32_t port_timestamp_us(void) {
 | 폐쇄망 운용 | `docs/OFFLINE_GUIDE.md` |
 | FreeRTOS Hook 설정 | `docs/FREERTOS_HOOK_GUIDE.md` |
 | 전체 문서 목록 | `docs/DOCUMENT_INDEX.md` |
+
+---
+
+## 직렬 포트(UART) 접근 권한 설정
+
+Docker 컨테이너 또는 Linux 호스트에서 `/dev/ttyUSB0`에 접근하려면
+추가 권한이 필요합니다.
+
+### 호스트 직접 실행
+
+```bash
+# dialout 그룹 추가 (재로그인 필요)
+sudo usermod -aG dialout $USER
+newgrp dialout
+
+# 또는 임시 권한 (재부팅 시 초기화)
+sudo chmod 666 /dev/ttyUSB0
+```
+
+### Docker 컨테이너
+
+```bash
+# docker-compose.yml의 devices 항목이 있으면 자동 매핑
+# (이미 포함됨: /dev/ttyUSB0:/dev/ttyUSB0)
+
+# 컨테이너 내부에서도 dialout 그룹 필요
+docker exec -it claudertos-host bash
+# 컨테이너 내부:
+addgroup --system dialout 2>/dev/null || true
+usermod -aG dialout $(whoami)
+```
+
+### udev 규칙 (영구 설정)
+
+```bash
+# STM32 Nucleo 전용 udev 규칙
+sudo tee /etc/udev/rules.d/99-claudertos.rules << 'EOF'
+# STM32 Nucleo (ST-Link V2)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", \
+  SYMLINK+="ttyNucleo", MODE="0666", GROUP="dialout"
+EOF
+
+sudo udevadm control --reload-rules && sudo udevadm trigger
+# 이후: /dev/ttyNucleo 로 접근 가능
+```
