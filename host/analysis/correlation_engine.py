@@ -666,3 +666,4 @@ def _infer_scenario(issue_type: str) -> str:
     if issue_type in timing:   return 'timing'
     if issue_type in deadlock: return 'deadlock'
     return 'general'
+# EOF

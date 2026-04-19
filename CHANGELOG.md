@@ -1626,3 +1626,50 @@ debugger = RTOSDebuggerV3(
 | 처리 불가 | 2건 | 환경·아키텍처 제약 |
 
 ### Validation: 26/26 + 20/20 PASS
+
+## [5.0.1] — 2026-04-19 ✅ PRODUCTION READY
+
+### 리뷰 지적 사항 수정 (6건)
+
+#### 이슈 1: 버전 정보 불일치 3곳 수정
+- `claudertos_main.py` 시작 메시지: v4.9.8 → **v5.0.0**
+- `claudertos_main.py` argparse `--version` 인수 추가
+  ```
+  $ python3 claudertos_main.py --version
+  ClaudeRTOS-Insight v5.0.0 (codebase v2.5.0)
+  ```
+- `github-update.sh` VERSION과 main 버전 일치 확인
+
+#### 이슈 2: README Provider 표 중복 행 제거
+- `claude_agent`: 2행 → 1행 (중복 제거)
+- `gemini_cli`: 2행 → 1행 (중복 제거)
+- `codex_cli`: 이미 1행 (정상)
+
+#### 이슈 3: correlation_engine.py 완전성 확인
+- 구문 오류 없음 (ast.parse OK)
+- 괄호 균형 (508/508)
+- 파일 끝 개행 정상
+- EOF 마커 추가로 명시적 완전성 표시
+
+#### 이슈 4a: `_send_webhook` 재시도 로직 추가
+- **지수 백오프 재시도** (최대 3회): 1초 → 2초 → 4초 대기
+- **HTTPError 4xx**: 클라이언트 오류는 재시도 없이 즉시 반환
+- **WARNING 로그**: 각 실패 시도마다 로그 기록
+- **ERROR 로그**: 모든 재시도 실패 시 누락 알림 기록
+- 파이프라인 차단 없음 (False 반환 유지)
+
+#### 이슈 4b: 수신 큐 드롭 경고 로그 추가
+- 큐 포화(backpressure) 발생 시 `logging.WARNING` 기록
+- 메시지: `수신 큐 포화 — 가장 오래된 패킷 드롭 (분석 처리 속도 < 수신 속도)`
+
+#### 이슈 4c: Detached HEAD 자동 복구
+- 기존: 에러 메시지 출력 + `exit 1` 종료
+- 개선: 자동 브랜치 생성 시도 → 기존 브랜치 전환 폴백 → 수동 안내
+  ```bash
+  # 자동 처리 순서:
+  git checkout -b main    # 신규 브랜치 생성 시도
+  git checkout main       # 실패 시 기존 브랜치 전환
+  # 둘 다 실패 시: 수동 안내 출력 후 exit 1
+  ```
+
+### Validation: 27/27 + 20/20 PASS

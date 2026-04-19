@@ -163,8 +163,16 @@ class AlertManager:
         print(f"   {desc}")
 
     def _send_webhook(self, sev: str, desc: str,
-                       task: str, itype: str, ts: float) -> bool:
-        """HTTP POST로 웹훅 전송. 실패 시 False 반환 (파이프라인 차단 없음)."""
+                           task: str, itype: str, ts: float,
+                           max_retries: int = 3) -> bool:
+        """
+        HTTP POST로 웹훅 전송.
+
+        네트워크 오류 시 지수 백오프로 최대 max_retries회 재시도.
+        모든 시도 실패해도 False 반환 — 분석 파이프라인 차단 없음.
+        """
+        import time as _time
+
         payload = json.dumps({
             'text': (f"*[{sev}] ClaudeRTOS Alert*\n"
                      f"Task: `{task}` | Type: `{itype}`\n"
@@ -174,21 +182,38 @@ class AlertManager:
             'type':     itype,
             'ts':       ts,
         }).encode('utf-8')
-        try:
-            req = urllib.request.Request(
-                self._webhook_url,
-                data=payload,
-                headers={'Content-Type': 'application/json'},
-            )
-            with urllib.request.urlopen(
-                    req, timeout=self._webhook_timeout):
-                return True
-        except Exception as e:
-            logger.debug("Webhook 전송 실패 (무시): %s", e)
-            return False
 
-    # ── 조회 ──────────────────────────────────────────────────
-    @property
+        for attempt in range(1, max_retries + 1):
+            try:
+                req = urllib.request.Request(
+                    self._webhook_url,
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                )
+                with urllib.request.urlopen(
+                        req, timeout=self._webhook_timeout):
+                    return True
+            except urllib.error.HTTPError as e:
+                # 4xx 클라이언트 오류 — 재시도 무의미
+                logging.warning(
+                    "[AlertManager] 웹훅 HTTP 오류 %d: %s — 재시도 안함",
+                    e.code, e.reason)
+                return False
+            except (urllib.error.URLError, OSError) as e:
+                logging.warning(
+                    "[AlertManager] 웹훅 전송 실패 (시도 %d/%d): %s",
+                    attempt, max_retries, e)
+                if attempt < max_retries:
+                    _time.sleep(2 ** (attempt - 1))  # 1, 2, 4초 지수 백오프
+            except Exception as e:
+                logging.error("[AlertManager] 웹훅 예기치 않은 오류: %s", e)
+                return False
+
+        logging.error(
+            "[AlertManager] 웹훅 %d회 모두 실패 — 알림 누락: [%s] %s",
+            max_retries, sev, itype)
+        return False
+
     def history(self) -> List[AlertRecord]:
         return list(self._history)
 

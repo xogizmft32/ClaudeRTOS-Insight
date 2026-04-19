@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.1-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -18,7 +18,7 @@ CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 
 ```
 사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
 AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
-결과  → v2.3 → v5.0.0, 135개 파일, 20/20 검증 통과
+결과  → v2.3 → v5.0.1, 135개 파일, 20/20 검증 통과
 ```
 
 ---
@@ -161,10 +161,8 @@ export CLAUDERTOS_AI_PROVIDER=codex_cli    # Codex CLI (ChatGPT 구독 포함)
 | Provider | 비용/이슈 | 특징 |
 |----------|----------|------|
 | anthropic | ~$0.0085 | 임베디드 도메인 품질 우수 |
-| claude_agent | ~$0.0085 | **에이전트 루프** (multi-turn 자율 분석) |
 | openai | ~$0.0072 | 균형형 |
 | google | ~$0.0060 | 저비용 (REST API) |
-| gemini_cli | **$0 (OAuth)** | Gemini CLI headless, 무료 사용 가능 |
 | ollama | **$0** | 로컬, 오프라인, llama3.1:8b 권장 |
 | claude_agent | ~$0.0085 | **Agent SDK 에이전트 루프** — 다회 추론 |
 | gemini_cli | **$0** | Gemini CLI headless, OAuth 무료 티어 |

@@ -45,6 +45,8 @@ Environment Variables:
   CLAUDERTOS_SECRETS_FILE 민감 정보 목록 JSON 경로
         """)
 
+    parser.add_argument('--version', action='version',
+        version='ClaudeRTOS-Insight v5.0.0 (codebase v2.5.0)')
     parser.add_argument('--validate',
         action='store_true',
         help='환경 검증 실행 (하드웨어 불필요)')
@@ -120,7 +122,7 @@ def _run_debug(args):
 
     수신기(Collector) → StreamingParser → 분석 파이프라인 → AI 분석
     """
-    print(f"ClaudeRTOS-Insight v4.9.8 — 디버깅 시작")
+    print(f"ClaudeRTOS-Insight v5.0.0 — 디버깅 시작")
     print(f"  포트:    {args.port}")
     print(f"  AI 모드: {args.ai_mode}")
     print(f"  프로파일:{args.profile}")
@@ -169,9 +171,15 @@ def _run_debug(args):
                 try:
                     snap_queue.put_nowait(raw)
                 except queue.Full:
-                    # 분석이 밀리면 가장 오래된 패킷 드롭
-                    try: snap_queue.get_nowait()
-                    except queue.Empty: pass
+                    # 분석이 밀리면 가장 오래된 패킷 드롭 (backpressure)
+                    try:
+                        snap_queue.get_nowait()   # oldest 제거
+                        import logging as _lg
+                        _lg.warning(
+                            '[Collector] 수신 큐 포화 — 가장 오래된 패킷 드롭 '
+                            '(분석 처리 속도 < 수신 속도)')
+                    except queue.Empty:
+                        pass
                     snap_queue.put_nowait(raw)
             snap_queue.put(None)  # 종료 신호
 
