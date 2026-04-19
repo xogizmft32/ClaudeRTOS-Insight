@@ -102,6 +102,10 @@ class ConsecutiveTracker:
             return True
         return False
 
+    def reset(self) -> None:
+        """모든 추적 상태 초기화 (패킷 유실·역전 시 호출)."""
+        self._counts.clear()
+
     def reset_absent(self, active_keys: set) -> None:
         for k in list(self._counts.keys()):
             if k not in active_keys:
@@ -169,6 +173,7 @@ class AnalysisEngine:
         self._heap_trend = TrendTracker(15, min_samples=7, warm_up=3)
         self._cpu_trend  = TrendTracker(15, min_samples=7, warm_up=3)
         self._consecutive = ConsecutiveTracker(threshold=consecutive_threshold)
+        self._last_seq: int = -1          # 시퀀스 역전/유실 감지용
         self.ai_cache     = AIResponseCache(ttl_seconds=ai_cache_ttl)
 
     @property
@@ -177,6 +182,18 @@ class AnalysisEngine:
 
     # ── Public API ───────────────────────────────────────────────
     def analyze_snapshot(self, snap: Dict) -> List[Issue]:
+        # ── 시퀀스 유실/역전 감지 ─────────────────────────────
+        seq = snap.get('sequence', -1)
+        if self._last_seq >= 0 and seq >= 0:
+            if seq - self._last_seq > 1:
+                self._consecutive.reset()   # 패킷 유실 → 오탐 방지
+            elif seq <= self._last_seq and seq != 0:
+                self._consecutive.reset()   # 역전 (타겟 재부팅)
+                self._last_seq = -1
+        if seq >= 0:
+            self._last_seq = seq
+        # ──────────────────────────────────────────────────────
+
         self._snapshots.append(snap)
         self._update_trends(snap)
 

@@ -171,6 +171,43 @@ class TimeNormalizer:
     @property
     def reference(self) -> Optional[TimeRef]:
         return self._ref
+    def cyccnt_delta_us(self, cyccnt_prev: int, cyccnt_curr: int) -> int:
+        """
+        두 CYCCNT 값 사이의 경과 시간(µs) 계산 — 오버플로 자동 보정.
+
+        Parameters
+        ----------
+        cyccnt_prev : 이전 CYCCNT (32비트, 0~0xFFFFFFFF)
+        cyccnt_curr : 현재 CYCCNT
+
+        Returns
+        -------
+        경과 µs (항상 양수)
+        """
+        if cyccnt_curr >= cyccnt_prev:
+            delta = cyccnt_curr - cyccnt_prev
+        else:
+            # 오버플로: curr이 wrap-around됨
+            delta = (self._CYCCNT_MAX + 1 - cyccnt_prev) + cyccnt_curr
+        if self._cpu_hz <= 0:
+            return delta
+        return int(delta * 1_000_000 // self._cpu_hz)
+
+    def resync(self, uptime_ms: int, cyccnt: int) -> None:
+        """
+        지연 연결 재동기화 — set_reference() 별칭.
+
+        부팅 후 일정 시간이 지난 뒤 연결하거나,
+        타임스탬프 역전 감지 시 기준점 재설정에 사용.
+
+        Parameters
+        ----------
+        uptime_ms : FreeRTOS xTaskGetTickCount() × portTICK_PERIOD_MS
+        cyccnt    : DWT->CYCCNT 현재값 (오버플로 횟수는 리셋)
+        """
+        self.set_reference(uptime_ms=uptime_ms, cyccnt=cyccnt)
+        self._wrap_count = 0  # 재동기화 시 wrap 카운터 리셋
+
 
 
     def split_timelines(self, events: List[Dict]) -> Dict[str, List[Dict]]:

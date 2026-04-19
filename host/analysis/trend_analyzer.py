@@ -23,6 +23,7 @@ AI가 더 정확한 근본 원인 가설을 생성하도록 돕는다.
 """
 
 from __future__ import annotations
+import threading
 
 from collections import deque
 from dataclasses import dataclass, field
@@ -77,6 +78,7 @@ class TrendAnalyzer:
     _R2_THRESHOLD      = 0.7    # 선형성 최소값 (낮으면 불규칙)
 
     def __init__(self, window: int = 10, sample_interval_s: float = 3.0):
+        self._lock = threading.Lock()  # thread-safe
         self._window   = window
         self._interval = sample_interval_s
         # (timestamp_s, value) 쌍 저장

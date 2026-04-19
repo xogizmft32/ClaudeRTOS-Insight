@@ -132,3 +132,81 @@ class TestHallucinationGuard:
         notes = guard.verify(ai_r, snap_critical, [])
         md = HallucinationGuard.format_for_report(notes)
         assert '|' in md
+
+
+class TestTimeNormalizerOverflow:
+    """CYCCNT 32비트 오버플로(23.9초 @ 180MHz) 처리 검증."""
+
+    CPU_HZ = 180_000_000
+    CYCCNT_MAX = 0xFFFFFFFF
+
+    def test_normal_conversion(self):
+        """정상 변환: 180,000 cycles = 1ms = 1000µs."""
+        tn = TimeNormalizer(cpu_hz=self.CPU_HZ)
+        tn.set_reference(uptime_ms=0, cyccnt=0)
+        result = tn.cycles_to_us(180_000)
+        assert abs(result - 1000) < 2, f"예상 1000µs, 실제 {result}µs"
+
+    def test_single_overflow(self):
+        """
+        단일 wrap-around: 23.9초 후 CYCCNT가 0으로 돌아옴.
+
+        기준점: cyccnt=0, 이후 0xFFFFFFFF+1 cycles 경과 → 오버플로 1회.
+        오버플로 후 값 100이면 실제 경과 = 0xFFFFFFFF+1+100 cycles.
+        """
+        tn = TimeNormalizer(cpu_hz=self.CPU_HZ)
+        tn.set_reference(uptime_ms=0, cyccnt=0)
+
+        # 오버플로 시뮬레이션: _wrap_count를 1로 설정
+        tn._wrap_count = 1
+        overflow_cycles = 100  # 오버플로 후 100 cycles
+
+        result_us = tn.cycles_to_us(overflow_cycles)
+        # 기대값: (0xFFFFFFFF+1 + 100) / 180e6 * 1e6
+        expected_us = int((self.CYCCNT_MAX + 1 + overflow_cycles) * 1_000_000 // self.CPU_HZ)
+        assert abs(result_us - expected_us) < 10, (
+            f"오버플로 후 변환 오류: 예상 {expected_us}µs, 실제 {result_us}µs")
+
+    def test_multiple_overflows(self):
+        """복수 wrap-around: 24초 * 5 = 120초 후에도 단조 증가 유지."""
+        tn = TimeNormalizer(cpu_hz=self.CPU_HZ)
+        tn.set_reference(uptime_ms=0, cyccnt=0)
+
+        prev_us = 0
+        for wrap in range(5):
+            tn._wrap_count = wrap
+            for cyccnt in [0, self.CPU_HZ, self.CYCCNT_MAX]:
+                current_us = tn.cycles_to_us(cyccnt)
+                if cyccnt > 0 or wrap > 0:
+                    assert current_us > prev_us or cyccnt == 0, (
+                        f"단조 증가 위반: wrap={wrap}, cyccnt={cyccnt}, "
+                        f"current={current_us}µs, prev={prev_us}µs")
+                if cyccnt > 0:
+                    prev_us = current_us
+
+    def test_late_connection_reference(self):
+        """
+        지연 연결: 부팅 후 30초(>23.9초, 오버플로 1회) 경과 후 연결.
+
+        uptime_ms로 정확한 기준점을 재설정할 수 있어야 함.
+        """
+        tn = TimeNormalizer(cpu_hz=self.CPU_HZ)
+
+        # 30초 후 연결: uptime_ms=30000, cyccnt은 오버플로 후 약 1.1초 위치
+        # 실제 경과 cycles = 30 * 180e6 = 5_400_000_000
+        # CYCCNT = 5_400_000_000 % (2^32) = 5_400_000_000 - 4_294_967_296 = 1_105_032_704
+        late_cyccnt = 30 * self.CPU_HZ % (self.CYCCNT_MAX + 1)
+        tn.set_reference(uptime_ms=30_000, cyccnt=late_cyccnt)
+
+        # 이후 1ms 경과
+        next_cyccnt = (late_cyccnt + 180_000) % (self.CYCCNT_MAX + 1)
+        delta_us = tn.cyccnt_delta_us(late_cyccnt, next_cyccnt)
+        assert abs(delta_us - 1000) < 2, (
+            f"지연 연결 후 delta 오류: 예상 1000µs, 실제 {delta_us}µs")
+
+    def test_no_reference_fallback(self):
+        """기준점 없이 cycles_to_us 호출 → 단순 비율 변환으로 폴백."""
+        tn = TimeNormalizer(cpu_hz=self.CPU_HZ)
+        # set_reference 없이 호출
+        result = tn.cycles_to_us(180_000)
+        assert result > 0, "기준점 없이도 양수 반환해야 함"

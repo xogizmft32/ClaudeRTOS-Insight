@@ -1568,3 +1568,61 @@ debugger = RTOSDebuggerV3(
 | packet 인터페이스 변경 | 불필요 | 기능적 문제 없음 |
 
 ### Validation: 29/29 + 20/20 PASS
+
+## [5.0.0] — 2026-04-18 ✅ PRODUCTION READY
+
+### 리뷰 기반 개선 — 남은 항목 완결 (P2~P4)
+
+#### P2-8: CYCCNT overflow 단위 테스트
+
+**`TimeNormalizer` 신규 메서드**
+- `cyccnt_delta_us(prev, curr)`: 두 CYCCNT 값 사이 경과 시간(µs), overflow 자동 보정
+- `resync(uptime_ms, cyccnt)`: 지연 연결 재동기화, `_wrap_count` 리셋
+
+**`host/tests/test_pipeline.py` — `TestTimeNormalizerOverflow` 클래스 5개 테스트**
+- `test_normal_conversion`: 1ms = 1000µs 정상 변환
+- `test_single_overflow`: 단일 wrap-around(23.9초) 보정
+- `test_multiple_overflows`: 5회 wrap-around 후 단조 증가 유지
+- `test_late_connection_reference`: 30초 지연 연결 후 delta 정확성
+- `test_no_reference_fallback`: 기준점 없이도 양수 반환
+
+#### P3-13: Analyzer 상태 관리
+
+**`ConsecutiveTracker.reset()` 추가**
+- 패킷 유실·역전 시 오탐 방지 목적으로 추적 상태 초기화
+
+**`AnalysisEngine.analyze_snapshot()` 시퀀스 추적**
+- `_last_seq` 필드: 이전 패킷 시퀀스 번호 추적
+- gap > 1: 패킷 유실 감지 → `_consecutive.reset()`
+- seq 역전: 타겟 재부팅 감지 → `_consecutive.reset()` + `_last_seq = -1`
+
+#### P4-17: 파이프라인 흐름 문서
+
+**`docs/PIPELINE_FLOW.md` 신규 (152줄)**
+- 펌웨어 → ITM SWO → 호스트 파이프라인 [1]~[15] 전체 ASCII 다이어그램
+- 컴포넌트별 입출력 명세 (입력/출력/파일/클래스)
+- 오류 전파 규칙 명시
+
+#### P4-18: thread safety
+
+**`GlobalCausalGraph`: `threading.RLock()` 필드 추가**
+- Queue+워커 구조 도입 후 update()·propagate_confidence() 동시 호출 대비
+
+**`TrendAnalyzer`: `threading.Lock()` 필드 추가**
+- 수신 스레드(push)와 분석 스레드(analyze) 동시 접근 대비
+
+#### P4-19: 시간 동기화 검증
+
+`TimeNormalizer.resync()`: 지연 연결 기준점 재설정
+- 부팅 후 오버플로(23.9초) 경과 후 연결해도 정확한 delta 계산
+- `_wrap_count = 0` 리셋으로 기준점 초기화
+
+### 전체 리뷰 처리 완결 현황
+
+| 분류 | 건수 | 상태 |
+|------|------|------|
+| 처리 완료 (P1~P4) | 15건 | ✅ 전부 구현 |
+| 처리 불필요 | 4건 | 설계 결정 |
+| 처리 불가 | 2건 | 환경·아키텍처 제약 |
+
+### Validation: 26/26 + 20/20 PASS

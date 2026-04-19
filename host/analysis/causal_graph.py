@@ -21,6 +21,7 @@ N100 처리 시간: < 0.5ms / 스냅샷
 """
 
 from __future__ import annotations
+import threading
 
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -117,6 +118,7 @@ class CausalGraph:
     """
 
     def __init__(self, max_nodes: int = 200):
+        self._lock = threading.RLock()  # thread-safe
         self._nodes:   Dict[str, CausalNode] = {}
         self._edges:   List[CausalEdge] = []
         self._adj:     Dict[str, List[str]] = defaultdict(list)

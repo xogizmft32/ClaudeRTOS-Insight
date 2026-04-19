@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-4.9.9-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -18,7 +18,7 @@ CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 
 ```
 사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
 AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
-결과  → v2.3 → v4.9.9, 135개 파일, 20/20 검증 통과
+결과  → v2.3 → v5.0.0, 135개 파일, 20/20 검증 통과
 ```
 
 ---
@@ -288,9 +288,11 @@ docker-compose.yml  멀티컨테이너 (host + ollama + replay)
 | [GEMINI_CLI_GUIDE.md](docs/GEMINI_CLI_GUIDE.md) | **Gemini CLI** — 무료 OAuth, headless 설정 |
 | [CLAUDE_AGENT_GUIDE.md](docs/CLAUDE_AGENT_GUIDE.md) | **Claude Agent SDK** — 에이전트 루프 분석 |
 | [CODEX_CLI_GUIDE.md](docs/CODEX_CLI_GUIDE.md) | **OpenAI Codex CLI** — gpt-5.3-codex 분석 |
+| [PIPELINE_FLOW.md](docs/PIPELINE_FLOW.md) | **파이프라인 흐름** — 수신→파싱→분석→AI 전체 데이터 흐름 |
 | [GEMINI_CLI_GUIDE.md](docs/GEMINI_CLI_GUIDE.md) | **Gemini CLI** — 무료 Google AI 분석 |
 | [CLAUDE_AGENT_GUIDE.md](docs/CLAUDE_AGENT_GUIDE.md) | **Claude Agent SDK** — 에이전트 루프 분석 |
 | [CODEX_CLI_GUIDE.md](docs/CODEX_CLI_GUIDE.md) | **OpenAI Codex CLI** — gpt-5.3-codex 분석 |
+| [PIPELINE_FLOW.md](docs/PIPELINE_FLOW.md) | **파이프라인 흐름** — 수신→파싱→분석→AI 전체 데이터 흐름 |
 | [PATTERN_GUIDE_ko.md](docs/PATTERN_GUIDE_ko.md) | 패턴 DB 추가·수정·학습 (한국어) |
 | [PATTERN_GUIDE.md](docs/PATTERN_GUIDE.md) | Pattern DB 가이드 (영문) |
 
