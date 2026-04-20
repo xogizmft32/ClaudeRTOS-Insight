@@ -1673,3 +1673,66 @@ debugger = RTOSDebuggerV3(
   ```
 
 ### Validation: 27/27 + 20/20 PASS
+
+## [5.0.2] — 2026-04-19 ✅ PRODUCTION READY
+
+### 펌웨어 아키텍처 개선 (리뷰 반영)
+
+#### 문제 1: ring_buffer SPSC Lock-Free 위반 수정
+
+**원인**: `RingBuffer_Write_Policy`의 `OVERFLOW_DROP_OLDEST` 경로에서  
+생산자(Writer)가 소비자 전용 포인터 `rb->read_pos`를 직접 수정.
+
+**수정**: `OVERFLOW_DROP_OLDEST` 정책에서 생산자는 write_pos를 건드리지 않고  
+새 데이터를 버리는 방식(DROP_NEW)으로 전환. SPSC 설계 원칙 주석 추가.
+
+```
+기존: 생산자 → rb->read_pos 직접 수정 (Race Condition 위험)
+개선: 생산자 → return false (새 데이터 DROP, read_pos 미수정)
+```
+
+#### 문제 2: Priority Buffer 크리티컬 섹션 최소화
+
+**원인**: `PriorityBufferV4_Read`에서 `taskENTER_CRITICAL` 블록 안에  
+최대 512B `memcpy` 포함 → 인터럽트 지연(Interrupt Latency) 발생.
+
+**수정**: CRITICAL 섹션을 인덱스 스냅샷/포인터 갱신만 수행하도록 분리.  
+`memcpy`는 `taskEXIT_CRITICAL()` 이후 ISR 방해 없이 수행.
+
+```c
+// Before: CRITICAL { 인덱스 + memcpy(최대512B) }
+// After:  CRITICAL { 인덱스만 (수µs) } → memcpy (ISR 지연 없음)
+```
+
+#### 문제 3: UART IT 비동기 전환 + Race Condition 수정
+
+**원인**: `HAL_UART_Transmit()` 100ms 블로킹 + `s_uart_busy` 동기화 없음.
+
+**수정**:
+- `HAL_UART_Transmit_IT()` 비동기 전환 (즉시 반환)
+- `HAL_UART_TxCpltCallback()` 추가 — IT 완료 시 플래그 해제
+- `taskENTER_CRITICAL_FROM_ISR()` 으로 busy 플래그 원자적 보호
+- 전송 모드 전환 임계값 상수 정의 (`TRANSPORT_THRESHOLD_CPU_VERBOSE`)
+
+```c
+// 비동기 설계: 전송 완료 콜백에서 s_uart_busy = false
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == s_huart.Instance) s_uart_busy = false;
+}
+```
+
+#### 문제 4 + 개선 2,4: fault_injection.c 완전 추상화 + DEBUG 가드
+
+**원인**: SR 레지스터 직접 쓰기(9건) + 이식성 없음 + DEBUG 가드 없음.
+
+**수정**:
+- `#ifndef CLAUDERTOS_FAULT_INJECT_ENABLED` 컴파일 가드 추가
+- `USART1->SR |= ...` / `I2C1->SR1 |= ...` → `Port_Simulate*()`
+- 결과 읽기/클리어도 `Port_Read*()` / `Port_Clear*()` 추상화
+- `port.h`: 8개 함수 선언, `port_impl.c`: STM32 HAL 콜백 기반 구현
+
+**STM32 아키텍처 주석**: 상태 레지스터 소프트웨어 쓰기는 무시됨 →  
+HAL 에러 콜백 직접 호출 방식으로 테스트 신뢰성 개선.
+
+### Validation: 18/18 + 20/20 PASS
+

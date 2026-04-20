@@ -266,3 +266,57 @@ void port_critical_exit(uint32_t saved)
  * ══════════════════════════════════════════════════════ */
 const char *port_platform_name(void) { return "STM32F4xx (Cortex-M4)"; }
 uint32_t    port_cpu_hz(void)        { return s_cpu_hz; }
+
+/* ── 결함 주입 HAL 추상화 구현 (Cortex-M4 / STM32) ─────────────
+ * STM32 SR 레지스터는 Software Write로 오류 플래그 강제 설정 불가.
+ * 대신 HAL 내부 에러 코드를 직접 설정하고 에러 콜백을 호출한다.
+ */
+#ifdef CLAUDERTOS_FAULT_INJECT_ENABLED
+#include "stm32f4xx_hal.h"
+extern UART_HandleTypeDef huart1;
+extern I2C_HandleTypeDef  hi2c1;
+
+void Port_SimulateUartParityError(void) {
+    huart1.ErrorCode |= HAL_UART_ERROR_PE;
+    HAL_UART_ErrorCallback(&huart1);
+}
+void Port_SimulateUartOverrun(void) {
+    huart1.ErrorCode |= HAL_UART_ERROR_ORE;
+    HAL_UART_ErrorCallback(&huart1);
+}
+void Port_SimulateUartError(void) {
+    huart1.ErrorCode |= HAL_UART_ERROR_FE;
+    HAL_UART_ErrorCallback(&huart1);
+}
+void Port_SimulateI2CTimeout(void) {
+    hi2c1.ErrorCode |= HAL_I2C_ERROR_TIMEOUT;
+    HAL_I2C_ErrorCallback(&hi2c1);
+}
+void Port_SimulateI2CError(void) {
+    hi2c1.ErrorCode |= HAL_I2C_ERROR_BUS;
+    HAL_I2C_ErrorCallback(&hi2c1);
+}
+#endif /* CLAUDERTOS_FAULT_INJECT_ENABLED */
+#ifdef CLAUDERTOS_FAULT_INJECT_ENABLED
+bool Port_ReadUartParityErrorCleared(void) {
+    /* PE 플래그가 클리어됐으면 HAL 에러 콜백이 처리한 것 */
+    extern UART_HandleTypeDef huart1;
+    return !(huart1.Instance->SR & USART_SR_PE);
+}
+void Port_ClearUartParityError(void) {
+    extern UART_HandleTypeDef huart1;
+    /* SR은 읽기 후 DR 읽기로 클리어 (STM32 Errata 준수) */
+    volatile uint32_t dummy = huart1.Instance->SR;
+    dummy = huart1.Instance->DR;
+    (void)dummy;
+}
+bool Port_ReadI2CTimeoutErrorCleared(void) {
+    extern I2C_HandleTypeDef hi2c1;
+    return !(hi2c1.Instance->SR1 & I2C_SR1_TIMEOUT);
+}
+void Port_ClearI2CTimeoutError(void) {
+    extern I2C_HandleTypeDef hi2c1;
+    hi2c1.Instance->SR1 &= ~I2C_SR1_TIMEOUT;
+}
+#endif /* CLAUDERTOS_FAULT_INJECT_ENABLED */
+

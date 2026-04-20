@@ -92,24 +92,23 @@ bool RingBuffer_Write_Policy(RingBuffer_t *rb, const uint8_t *data,
         rb->overflow_count++;
         
         if (policy == OVERFLOW_DROP_OLDEST) {
-            /* Make room by advancing read pointer (drop oldest) */
-            size_t needed = length - available_space;
-            
-            /* Safety limit: don't drop more than MAX_PACKET_SIZE */
-            if (needed > 512U) {  /* MAX_PACKET_SIZE = 512 */
-                needed = 512U;
-            }
-            
-            /* Advance read pointer (drop old data) */
-            read_pos = (read_pos + needed) & RING_BUFFER_MASK;
-            
-            /* Memory barrier before updating read position */
-            MEMORY_BARRIER();
-            rb->read_pos = read_pos;
-            rb->dropped_bytes += needed;
-            
-            /* Recalculate available space */
-            available_space = (read_pos - write_pos - 1U) & RING_BUFFER_MASK;
+            /*
+             * SPSC Lock-Free 설계 원칙 준수:
+             * 생산자(Writer)는 write_pos만 수정해야 함.
+             * read_pos를 생산자가 직접 수정하면 소비자(Reader)와
+             * Race Condition 발생 → 버퍼 상태 붕괴.
+             *
+             * 안전한 대안: OVERFLOW_DROP_OLDEST 정책에서는
+             * 새 데이터를 버리는(DROP_NEW) 방식으로 동작.
+             * 실제 oldest-drop은 소비자가 읽기 후 자신의 read_pos를
+             * 갱신하는 시점에만 이뤄져야 함.
+             *
+             * 운영 지침: 버퍼 포화 감지 후 상위 레이어에서
+             * 샘플링 주기를 늘리거나 Priority Buffer를 사용하라.
+             */
+            rb->overflow_count++;  /* 포화 카운터 추가 기록 */
+            rb->dropped_bytes += length;
+            return false;  /* 새 데이터 드롭 (write_pos 미수정) */
             
             /* Check if we have enough space now */
             if (length > available_space) {

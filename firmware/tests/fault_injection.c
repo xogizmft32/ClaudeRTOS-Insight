@@ -2,7 +2,37 @@
  * Safety-Critical Design - ⚠️ NOT CERTIFIED
  */
 
+/*
+ * fault_injection.c — 결함 주입 모듈
+ *
+ * 보안 경고: 이 파일은 디버그 전용입니다.
+ * CLAUDERTOS_FAULT_INJECT_ENABLED가 정의된 경우에만 컴파일됩니다.
+ * Release 빌드에서는 반드시 이 심볼을 정의하지 마십시오.
+ */
+#ifndef CLAUDERTOS_FAULT_INJECT_ENABLED
+#error "fault_injection.c는 디버그 전용입니다. " \
+       "Release 빌드에서는 CLAUDERTOS_FAULT_INJECT_ENABLED를 정의하지 마십시오."
+#endif
 #include "fault_injection.h"
+/*
+ * 하드웨어 레지스터 직접 접근 제거 (이식성 개선):
+ * - USART1->SR, I2C1->SR1 등 직접 레지스터 비트 조작 제거
+ * - Port_Simulate*() 함수로 추상화 (port/port.h)
+ *
+ * STM32 아키텍처 특성:
+ * - 대부분의 SR(Status Register) 오류 플래그는 Hardware Set Only
+ * - 소프트웨어 쓰기로 플래그 강제 설정 불가 (무시되거나 미정의 동작)
+ * - HAL 에러 콜백 트리거를 위해서는 Port_Simulate*() 구현에서
+ *   HAL_UART_IRQHandler() 또는 Error 콜백을 직접 호출해야 함
+ *
+ * port/port_impl.c에 Port_SimulateUartParityError() 등을 구현하라:
+ *   void Port_SimulateUartParityError(void) {
+ *       extern UART_HandleTypeDef huart1;
+ *       huart1.ErrorCode |= HAL_UART_ERROR_PE;
+ *       HAL_UART_ErrorCallback(&huart1);
+ *   }
+ */
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -537,16 +567,16 @@ void FaultInjection_UartParityError(FaultInjectionResult_t *result) {
 
 #if defined(USART1)
     /* USART_SR.PE (bit0) 강제 설정 → USART_CR1.PEIE가 활성화된 경우 IRQ 발생 */
-    USART1->SR |= USART_SR_PE;
+    Port_SimulateUartParityError();  /* HAL 추상화: port/port.h 참조 */
     result->error_flag_value = USART1->SR;
 
     /* 짧은 대기 후 콜백 호출 여부 확인 */
     vTaskDelay(pdMS_TO_TICKS(10));
-    /* 실제 시스템에서는 HAL_UART_ErrorCallback이 PE 플래그를 클리어함 */
-    result->fault_detected   = !(USART1->SR & USART_SR_PE);   /* 클리어됐으면 감지됨 */
+    /* HAL 추상화: 상태 레지스터 직접 접근 대신 Port 함수 사용 */
+    result->fault_detected   = Port_ReadUartParityErrorCleared();  /* 콜백이 클리어했으면 true */
     result->callback_invoked = result->fault_detected;
-    /* 클리어 안 됐으면 강제 클리어 (테스트 정리) */
-    if (!result->fault_detected) USART1->SR &= ~USART_SR_PE;
+    /* 클리어 안 됐으면 Port 함수로 강제 클리어 (테스트 정리) */
+    if (!result->fault_detected) Port_ClearUartParityError();
 #else
     /* 시뮬레이션 모드: 항상 탐지됨으로 처리 */
     result->fault_detected   = true;
@@ -568,12 +598,12 @@ void FaultInjection_UartFrameError(FaultInjectionResult_t *result) {
     uint32_t t_start = xTaskGetTickCount();
 
 #if defined(USART1)
-    USART1->SR |= USART_SR_FE;   /* 프레임 오류 플래그 */
+    Port_SimulateUartError();        /* HAL 추상화: port/port.h 참조 */   /* 프레임 오류 플래그 */
     result->error_flag_value = USART1->SR;
     vTaskDelay(pdMS_TO_TICKS(10));
-    result->fault_detected   = !(USART1->SR & USART_SR_FE);
+    result->fault_detected   = Port_ReadUartParityErrorCleared();  /* HAL 추상화 (FE 감지) */
     result->callback_invoked = result->fault_detected;
-    if (!result->fault_detected) USART1->SR &= ~USART_SR_FE;
+    if (!result->fault_detected) Port_ClearUartParityError();    /* HAL 추상화 (FE 클리어) */
 #else
     result->fault_detected = true; result->error_flag_value = 0x02;
 #endif
@@ -589,12 +619,12 @@ void FaultInjection_I2cTimeout(FaultInjectionResult_t *result) {
 
 #if defined(I2C1)
     /* I2C_SR1.TIMEOUT (bit14): SCL low stretch 타임아웃 */
-    I2C1->SR1 |= I2C_SR1_TIMEOUT;
+    Port_SimulateI2CTimeout();       /* HAL 추상화: port/port.h 참조 */
     result->error_flag_value = I2C1->SR1;
     vTaskDelay(pdMS_TO_TICKS(10));
-    result->fault_detected   = !(I2C1->SR1 & I2C_SR1_TIMEOUT);
+    result->fault_detected   = Port_ReadI2CTimeoutErrorCleared();   /* HAL 추상화 */
     result->callback_invoked = result->fault_detected;
-    if (!result->fault_detected) I2C1->SR1 &= ~I2C_SR1_TIMEOUT;
+    if (!result->fault_detected) Port_ClearI2CTimeoutError();       /* HAL 추상화 */
 #else
     result->fault_detected = true; result->error_flag_value = (1<<14);
 #endif
@@ -610,12 +640,12 @@ void FaultInjection_I2cNack(FaultInjectionResult_t *result) {
 
 #if defined(I2C1)
     /* I2C_SR1.AF (bit10): Acknowledge failure (NACK) */
-    I2C1->SR1 |= I2C_SR1_AF;
+    Port_SimulateI2CError();         /* HAL 추상화: port/port.h 참조 */
     result->error_flag_value = I2C1->SR1;
     vTaskDelay(pdMS_TO_TICKS(10));
-    result->fault_detected   = !(I2C1->SR1 & I2C_SR1_AF);
+    result->fault_detected   = Port_ReadI2CTimeoutErrorCleared();   /* HAL 추상화 (AF 감지) */
     result->callback_invoked = result->fault_detected;
-    if (!result->fault_detected) I2C1->SR1 &= ~I2C_SR1_AF;
+    if (!result->fault_detected) Port_ClearI2CTimeoutError();    /* HAL 추상화 (AF 클리어) */
 #else
     result->fault_detected = true; result->error_flag_value = (1<<10);
 #endif

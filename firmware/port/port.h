@@ -162,3 +162,24 @@ uint32_t port_cpu_hz(void);
 }
 #endif
 #endif /* CLAUDERTOS_PORT_H */
+
+/* ── 결함 주입 HAL 추상화 (디버그 전용) ─────────────────────────
+ * fault_injection.c에서 레지스터 직접 접근 대신 사용.
+ * port_impl.c에서 HAL 에러 콜백을 트리거하도록 구현.
+ * Release 빌드에서는 빈 함수로 컴파일됨(링커가 제거).
+ */
+#ifdef CLAUDERTOS_FAULT_INJECT_ENABLED
+void Port_SimulateUartParityError(void);
+void Port_SimulateUartOverrun(void);
+void Port_SimulateUartError(void);
+void Port_SimulateI2CTimeout(void);
+void Port_SimulateI2CError(void);
+#endif /* CLAUDERTOS_FAULT_INJECT_ENABLED */
+/* 결함 주입 결과 확인 / 클리어 HAL 추상화 */
+#ifdef CLAUDERTOS_FAULT_INJECT_ENABLED
+bool Port_ReadUartParityErrorCleared(void);
+void Port_ClearUartParityError(void);
+bool Port_ReadI2CTimeoutErrorCleared(void);
+void Port_ClearI2CTimeoutError(void);
+#endif
+

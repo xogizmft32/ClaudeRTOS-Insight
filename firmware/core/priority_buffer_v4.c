@@ -194,49 +194,69 @@ BufferError_t PriorityBufferV4_WriteFromISR(PriorityBufferV4_t *buf, const uint8
 size_t PriorityBufferV4_Read(PriorityBufferV4_t *buf, uint8_t *data, size_t max_len,
                              EventPriority_t *out_priority) {
     if (!buf || !data) return 0;
+
+    /*
+     * 크리티컬 섹션 최소화 설계 (P2 리뷰 반영):
+     * [1] CRITICAL 내: 인덱스 스냅샷 + 포인터 갱신만 (수µs)
+     * [2] CRITICAL 외: memcpy 수행 (최대 MAX_PACKET_SIZE B)
+     * → 인터럽트 지연(Interrupt Latency) 최소화
+     */
+    size_t  psize      = 0;
+    size_t  read_index = 0;
+    bool    is_ring    = false;
+    bool    reserved   = false;
+    size_t  ring_first = 0;
+    size_t  ring_base  = 0;
+
     taskENTER_CRITICAL(); DMB();
-    size_t result = 0;
     if (buf->reserved_packet_count > 0) {
-        size_t psize = buf->reserved_packet_sizes[0];
-        if (psize <= max_len) {
+        psize = buf->reserved_packet_sizes[0];
+        if (psize <= max_len && psize > 0) {
             size_t rp = buf->reserved_read_index, end = buf->reserved_end;
-            if (rp + psize <= end) memcpy(data, &buf->buffer[rp], psize);
-            else { size_t first = end - rp;
-                memcpy(data, &buf->buffer[rp], first);
-                memcpy(data + first, &buf->buffer[buf->reserved_start], psize - first); }
-            DMB();
-            buf->reserved_read_index = (rp + psize < end) ? rp + psize : 
-                buf->reserved_start + (rp + psize - end);
-            for (uint16_t i = 0; i < buf->reserved_packet_count - 1; i++)
-                buf->reserved_packet_sizes[i] = buf->reserved_packet_sizes[i + 1];
-            DMB(); buf->reserved_packet_count--;
+            read_index = rp; reserved = true;
+            is_ring    = (rp + psize > end);
+            ring_first = is_ring ? end - rp : 0;
+            ring_base  = is_ring ? buf->reserved_start : 0;
+            buf->reserved_read_index = is_ring
+                ? buf->reserved_start + (rp + psize - end)
+                : rp + psize;
+            for (uint16_t i = 0; i < buf->reserved_packet_count - 1U; i++)
+                buf->reserved_packet_sizes[i] = buf->reserved_packet_sizes[i + 1U];
+            buf->reserved_packet_count--;
+            buf->total_reads++;
             if (out_priority) *out_priority = PRIORITY_CRITICAL;
-            result = psize; buf->total_reads++;
         }
     } else if (buf->normal_packet_count > 0) {
-        size_t psize = buf->normal_packet_sizes[0];
-        if (psize <= max_len) {
+        psize = buf->normal_packet_sizes[0];
+        if (psize <= max_len && psize > 0) {
             size_t rp = buf->normal_read_index, end = buf->normal_end;
-            if (rp + psize <= end) memcpy(data, &buf->buffer[rp], psize);
-            else { size_t first = end - rp;
-                memcpy(data, &buf->buffer[rp], first);
-                memcpy(data + first, &buf->buffer[buf->normal_start], psize - first); }
-            DMB();
-            buf->normal_read_index = (rp + psize < end) ? rp + psize :
-                buf->normal_start + (rp + psize - end);
-            EventPriority_t pri = (EventPriority_t)buf->normal_priority_map[0];
-            for (uint16_t i = 0; i < buf->normal_packet_count - 1; i++) {
-                buf->normal_priority_map[i] = buf->normal_priority_map[i + 1];
-                buf->normal_packet_sizes[i] = buf->normal_packet_sizes[i + 1];
-            }
-            DMB(); buf->normal_packet_count--;
-            if (out_priority) *out_priority = pri;
-            result = psize; buf->total_reads++;
+            read_index = rp; reserved = false;
+            is_ring    = (rp + psize > end);
+            ring_first = is_ring ? end - rp : 0;
+            ring_base  = is_ring ? buf->normal_start : 0;
+            buf->normal_read_index = is_ring
+                ? buf->normal_start + (rp + psize - end)
+                : rp + psize;
+            for (uint16_t i = 0; i < buf->normal_packet_count - 1U; i++)
+                buf->normal_packet_sizes[i] = buf->normal_packet_sizes[i + 1U];
+            buf->normal_packet_count--;
+            buf->total_reads++;
+            if (out_priority) *out_priority = buf->normal_priority_map[0];
         }
     }
-    DMB();
     taskEXIT_CRITICAL();
-    return result;
+
+    if (psize == 0U) return 0U;
+
+    /* [2] CRITICAL 외부에서 memcpy — 인터럽트 지연 없음 */
+    if (!is_ring) {
+        memcpy(data, &buf->buffer[read_index], psize);
+    } else {
+        memcpy(data,              &buf->buffer[read_index], ring_first);
+        memcpy(data + ring_first, &buf->buffer[ring_base],  psize - ring_first);
+    }
+    (void)reserved;
+    return psize;
 }
 
 size_t PriorityBufferV4_ReadFromISR(PriorityBufferV4_t *buf, uint8_t *data, size_t max_len,

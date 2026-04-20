@@ -129,20 +129,70 @@ void Transport_Init(uint32_t cpu_hz)
     uart2_init();
 }
 
+/*
+ * Transport_SendBinary — 비동기 IT 전송 (개선사항 반영)
+ *
+ * 기존: HAL_UART_Transmit() 블로킹(100ms) → 호출 태스크 차단
+ * 개선: HAL_UART_Transmit_IT() 비동기 → 즉시 반환, 완료는 콜백
+ *
+ * s_uart_busy 경합 보호:
+ *   ISR 컨텍스트에서도 호출 가능하도록 taskENTER_CRITICAL_FROM_ISR 사용.
+ *   전송 완료 콜백(HAL_UART_TxCpltCallback)에서 플래그 해제.
+ *
+ * 주의: HAL_UART_Transmit_IT는 data 포인터를 전송 완료 전까지 유지해야 함.
+ *       호출자는 정적/전역 버퍼를 사용하거나 완료 콜백까지 버퍼를 보존해야 함.
+ *
+ * DMA 전환:
+ *   더 큰 패킷(> 64B)에서 CPU 부하를 추가로 줄이려면
+ *   HAL_UART_Transmit_DMA(&s_huart, data, len)으로 교체하고
+ *   DMA 채널을 CubeMX에서 구성하라.
+ */
 size_t Transport_SendBinary(const uint8_t *data, size_t len)
 {
     if (!data || len == 0U) return 0U;
+
+    /* s_uart_busy 원자적 확인 및 설정 — ISR 안전 */
+    UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
+    if (s_uart_busy) {
+        taskEXIT_CRITICAL_FROM_ISR(saved);
+        return 0U;  /* 전송 중 — 새 전송 거부 */
+    }
     s_uart_busy = true;
-    HAL_StatusTypeDef st = HAL_UART_Transmit(&s_huart,
-                                              (uint8_t*)data, (uint16_t)len,
-                                              100U);  /* 100ms 타임아웃 */
-    s_uart_busy = false;
-    return (st == HAL_OK) ? len : 0U;
+    taskEXIT_CRITICAL_FROM_ISR(saved);
+
+    /* 비동기 IT 전송 — 즉시 반환 (블로킹 없음) */
+    HAL_StatusTypeDef st = HAL_UART_Transmit_IT(&s_huart,
+                                                  (uint8_t*)data,
+                                                  (uint16_t)len);
+    if (st != HAL_OK) {
+        /* 전송 시작 실패 — 플래그 즉시 해제 */
+        UBaseType_t s2 = taskENTER_CRITICAL_FROM_ISR();
+        s_uart_busy = false;
+        taskEXIT_CRITICAL_FROM_ISR(s2);
+        return 0U;
+    }
+    return len;
+    /* s_uart_busy = false 는 HAL_UART_TxCpltCallback에서 수행 */
+}
+
+/* IT 전송 완료 콜백 — HAL이 자동 호출 (ISR 컨텍스트) */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == s_huart.Instance) {
+        /* ISR 안전: busy 플래그 원자적 해제 */
+        s_uart_busy = false;
+    }
 }
 
 void Transport_SendDiag(const char *msg)
 {
-    if (!msg || s_uart_busy) return;   /* 바이너리 전송 중이면 스킵 */
+    /* 진단 메시지: 바이너리 전송 중이 아닐 때만, 짧은 블로킹(50ms) 허용
+     * 진단 로그는 실시간성보다 디버깅 가독성 우선 */
+    UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
+    bool busy = s_uart_busy;
+    taskEXIT_CRITICAL_FROM_ISR(saved);
+
+    if (!msg || busy) return;
     size_t len = strlen(msg);
     if (len == 0U) return;
     HAL_UART_Transmit(&s_huart, (uint8_t*)msg, (uint16_t)len, 50U);
@@ -151,6 +201,20 @@ void Transport_SendDiag(const char *msg)
 const char *Transport_GetModeName(void) { return "UART"; }
 
 #endif /* CLAUDERTOS_TRANSPORT_UART */
+
+/* ── 전송 모드 전환 임계값 (개선사항: 파이프라인 최적화) ──────────
+ * 개발 환경에서 세밀 조정 가능.
+ * NORMAL  → VERBOSE: Critical 이슈 감지 시
+ * VERBOSE → NORMAL : Critical 해소 후 일정 시간 유지
+ *
+ * 토큰/대역폭 최적화:
+ *   - NORMAL 모드: 요약 스냅샷만 전송 (~200B/frame)
+ *   - VERBOSE 모드: 타임라인 이벤트 포함 (~1KB/frame)
+ *   - 전환 임계값을 높이면 토큰 절약, 낮추면 분석 정밀도 향상
+ */
+#define TRANSPORT_THRESHOLD_CPU_VERBOSE   (85U)  /* CPU% 이상 시 VERBOSE */
+#define TRANSPORT_THRESHOLD_HEAP_VERBOSE  (90U)  /* Heap% 이상 시 VERBOSE */
+#define TRANSPORT_VERBOSE_HOLD_FRAMES     (5U)   /* VERBOSE 유지 프레임 수 */
 
 /* ── 4.1: Hybrid 전송 모드 ──────────────────────────────────────
  * NORMAL:  요약 스냅샷만 전송 (저대역폭, 기본)
