@@ -1,4 +1,23 @@
-# ClaudeRTOS-Insight — CHANGELOG
+# CHANGELOG
+
+모든 변경 사항은 [Semantic Versioning](https://semver.org/lang/ko/)을 따른다.
+
+## 버전 체계
+
+| 버전 | 의미 | 배포 형식 |
+|------|------|-----------|
+| `X.y.z` | Major — 하위 비호환 변경 | 전체 아카이브 (`.tar.gz`) |
+| `x.Y.z` | Minor — 하위 호환 신규 기능 | 패치 파일 (`.patch` + 스크립트) |
+| `x.y.Z` | Patch — 버그/문서 수정 | 패치 파일 (`.patch` + 스크립트) |
+
+## 변경 유형 태그
+
+`feat` 신규 기능  `fix` 버그 수정  `docs` 문서  `refactor` 코드 개선
+`perf` 성능  `security` 보안  `breaking` 하위 비호환
+
+---
+
+laudeRTOS-Insight — CHANGELOG
 
 > **Built with AI-Assisted Design × Claude**  
 > 이 프로젝트는 자연어 의도 설명 → AI 코드 생성 → 개발자 검토 협업 방식(AI 보조 설계)으로 개발됐습니다.  
@@ -1736,3 +1755,73 @@ HAL 에러 콜백 직접 호출 방식으로 테스트 신뢰성 개선.
 
 ### Validation: 18/18 + 20/20 PASS
 
+
+---
+
+## [5.1.0] — 2026-04-21
+
+### 변경 유형
+`feat` 신규 기능 추가 (하위 호환)
+
+### 요약
+AI 분석 로직을 7단계 파이프라인으로 다단화. 단계별 독립 설정과 4개 프리셋을 제공한다.
+
+### 신규 파일
+| 파일 | 설명 |
+|------|------|
+| `host/ai/pipeline_config.py` | 7단계 설정 클래스 (`PipelineConfig`) + 4개 프리셋 |
+| `host/ai/analysis_pipeline.py` | 파이프라인 실행 엔진 (`AnalysisPipeline`) |
+| `docs/AI_PIPELINE_GUIDE.md` | 사용 가이드 (설정 예시, 환경 변수, 결과 구조) |
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `host/ai/rtos_debugger.py` | `use_pipeline()` 메서드 추가, 파이프라인 분기 통합 |
+
+### 파이프라인 7단계
+
+| # | Stage | 역할 | 설정 클래스 |
+|---|-------|------|-------------|
+| 0 | PreFilter | 심각도·중복·레이트 필터링 | `PreFilterConfig` |
+| 1 | Triage | 경량 모델 OK/WARNING/CRITICAL 분류 | `TriageConfig` |
+| 2 | Context | 컨텍스트 구성 + 마스킹 + 압축 | `ContextConfig` |
+| 3 | AI Call | 본 AI 호출 (Tier 자동/수동, 재시도) | `AIConfig` |
+| 4 | Verify | HallucinationGuard 신뢰도 검증 | `VerificationConfig` |
+| 5 | PostProcess | fix 코드 추출 / 캐싱 / 학습 | `PostProcessConfig` |
+| 6 | Fallback | rule_based → cached → degraded → empty | `FallbackConfig` |
+
+### 사용 예시
+
+```python
+from ai.rtos_debugger   import RTOSDebuggerV3
+from ai.pipeline_config import PipelineConfig
+
+# 프리셋 사용
+debugger = RTOSDebuggerV3().use_pipeline(PipelineConfig.deep())
+result   = debugger.debug_snapshot(snap, issues)
+
+# 직접 구성
+from ai.pipeline_config import AIConfig, VerificationConfig
+
+cfg = PipelineConfig(
+    ai=AIConfig(tier='TIER1', timeout_s=90, max_retries=2),
+    verify=VerificationConfig(mode='strict', min_trust=0.6),
+)
+debugger.use_pipeline(cfg)
+```
+
+### 환경 변수
+
+```bash
+export CLAUDERTOS_PIPELINE_PRESET=deep    # default / realtime / deep / offline
+export CLAUDERTOS_AI_TIER=TIER1           # 개별 오버라이드
+export CLAUDERTOS_VERIFY_MODE=strict
+```
+
+### 하위 호환
+- `RTOSDebuggerV3.debug_snapshot()` 반환 형식 유지 (`issues`, `session_summary` 등)
+- `use_pipeline()` 미호출 시 기존 단순 모드 동작 유지
+- 신규 `_pipeline_meta` 키 추가 (기존 코드에서 무시됨)
+
+### 검증
+16/16 단위 검증 + 20/20 Protocol PASS

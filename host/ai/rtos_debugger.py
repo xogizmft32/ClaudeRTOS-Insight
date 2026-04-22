@@ -45,6 +45,8 @@ except ImportError:
         _RR = None
 from .hallucination_guard  import HallucinationGuard
 from .ai_fallback          import AIFallbackAnalyzer
+from .pipeline_config      import PipelineConfig
+from .analysis_pipeline    import AnalysisPipeline
 from patterns.session_learner import SessionLearner
 from .providers.base import AITier
 
@@ -185,6 +187,35 @@ class RTOSDebuggerV3:
             min_occurrences=2,
         )
         self._auto_learn = True   # 기본: 자동 학습 활성화
+        self._fallback   = AIFallbackAnalyzer()
+        self._pipeline: Optional[AnalysisPipeline] = None
+
+    def use_pipeline(self,
+                     config: 'Optional[PipelineConfig]' = None) -> 'RTOSDebuggerV3':
+        """
+        7단계 AI 분석 파이프라인 활성화.
+
+        활성화 후 debug_snapshot()이 AnalysisPipeline.run()을 사용한다.
+        메서드 체인 지원:
+            debugger.use_pipeline(PipelineConfig.deep()).debug_snapshot(snap, issues)
+
+        프리셋
+        ------
+        PipelineConfig.default()   균형잡힌 기본값 (postmortem)
+        PipelineConfig.realtime()  빠른 응답 / 낮은 비용
+        PipelineConfig.deep()      최고 품질 / 심층 분석
+        PipelineConfig.offline()   AI 없음 / Rule 기반만
+        PipelineConfig.from_env()  환경 변수 기반 동적 설정
+        """
+        import logging as _lg
+        _cfg = config or PipelineConfig.default()
+        self._pipeline = AnalysisPipeline(
+            provider=self._provider,
+            config=_cfg,
+            cache=self._cache,
+        )
+        _lg.getLogger(__name__).info("[RTOSDebugger] pipeline: %s", _cfg.summary())
+        return self
 
     @property
     def provider(self) -> AIProvider:
@@ -216,6 +247,15 @@ class RTOSDebuggerV3:
                        isr_stats:       Optional[Dict] = None,
                        cpu_hz:          int            = 180_000_000) -> Dict:
         """OS 스냅샷 + 이슈 → AI 분석."""
+        # ── 7단계 파이프라인 모드 ───────────────────────────────
+        if self._pipeline is not None:
+            _r = self._pipeline.run(
+                snap=snap, issues=issues,
+                timeline_events=timeline_events,
+                trends=trends, isr_stats=isr_stats, cpu_hz=cpu_hz,
+            )
+            return _r.to_dict()
+        # ── 기존 단순 모드 ──────────────────────────────────────
         tier      = _resolve_tier(issues, False)
         max_tok   = _resolve_max_tokens(issues, False)
         system    = _resolve_system_prompt(issues, tier)
