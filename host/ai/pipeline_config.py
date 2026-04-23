@@ -135,7 +135,7 @@ class AIConfig:
     structured_output : JSON 구조화 출력 요청 여부
     """
     tier:               Literal['auto', 'TIER1', 'TIER2', 'TIER3'] = 'auto'
-    timeout_s:          int            = 120
+    timeout_s:          int            = 30    # 실패 시 최대 3회 × 30s = 90s
     max_retries:        int            = 2
     retry_delay_s:      float          = 1.0
     max_output_tokens:  int            = 2048

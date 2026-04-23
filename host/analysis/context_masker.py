@@ -28,9 +28,10 @@ class MaskLevel(str, Enum):
     NAMES     = 'names'
     ADDRESSES = 'addresses'
     STRICT    = 'strict'
+    FULL      = 'full'    # STRICT와 동일 — PipelineConfig masking_level='full' 지원
 
 _ORDER = {MaskLevel.NONE:0, MaskLevel.NAMES:1,
-          MaskLevel.ADDRESSES:2, MaskLevel.STRICT:3}
+          MaskLevel.ADDRESSES:2, MaskLevel.STRICT:3, MaskLevel.FULL:3}
 _TASK_ALIASES  = [f"Task_{chr(65+i)}" for i in range(26)]
 _MUTEX_ALIASES = [f"Mutex_{chr(65+i)}" for i in range(26)]
 

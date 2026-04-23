@@ -118,3 +118,47 @@ export CLAUDERTOS_MASK_LEVEL=addresses  # 이름 + 메모리 주소
 export CLAUDERTOS_MASK_LEVEL=strict     # 전체 마스킹
 ```
 자세한 내용: `host/analysis/context_masker.py`
+
+
+---
+
+## 네트워크 없는 환경 (폐쇄망) 설치
+
+### pip 의존성 오프라인 설치
+
+인터넷이 연결된 별도 시스템에서 `.whl` 파일을 미리 다운로드한다.
+
+```bash
+# [인터넷 연결 시스템에서] 의존성 다운로드
+mkdir -p ~/claudertos_wheels
+pip download -r host/requirements.txt -d ~/claudertos_wheels
+
+# USB/파일 전송 후 [폐쇄망 시스템에서] 설치
+pip install --no-index --find-links ~/claudertos_wheels \
+    -r host/requirements.txt
+```
+
+### Docker 이미지 오프라인 전송
+
+```bash
+# [인터넷 연결 시스템에서] 이미지 저장
+docker-compose build
+docker save claudertos-host:latest | gzip > claudertos_image.tar.gz
+
+# [폐쇄망 시스템에서] 이미지 로드
+docker load < claudertos_image.tar.gz
+docker-compose run --rm claudertos --validate
+```
+
+### 최소 설치 (anthropic 없이)
+
+네트워크가 전혀 없는 환경에서는 오프라인 모드만 사용한다.
+
+```bash
+# 최소 의존성만 설치 (pyserial + numpy)
+pip install --no-index --find-links ~/claudertos_wheels pyserial numpy
+
+# AI 없이 Rule 기반 분석만
+python3 examples/integrated_demo.py --port simulate --ai-mode offline
+python3 claudertos_main.py --port simulate --ai-mode offline
+```

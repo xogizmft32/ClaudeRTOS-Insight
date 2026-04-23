@@ -80,15 +80,17 @@ class ResourceGraph:
 
     def __init__(self):
         # task_id → set of mutex_addr (보유)
-        self._holds:  Dict[int, Set[str]] = defaultdict(set)
+        self._holds:   Dict[int, Set[str]] = defaultdict(set)
         # task_id → mutex_addr (대기 중, 최대 1개)
-        self._waits:  Dict[int, Optional[str]] = {}
+        self._waits:   Dict[int, Optional[str]] = {}
         # mutex_addr → task_id (현재 보유자)
-        self._holder: Dict[str, Optional[int]] = {}
+        self._holder:  Dict[str, Optional[int]] = {}
         # mutex_addr → list of task_id (대기 큐)
         self._waiters: Dict[str, List[int]] = defaultdict(list)
         # mutex_addr → name
-        self._names:  Dict[str, str] = {}
+        self._names:   Dict[str, str] = {}
+        # mutex_addr → timeout 횟수 (RG-003 경합 탐지)
+        self._timeouts: Dict[str, int] = {}
         self._event_count = 0
 
     # ── 이벤트 적용 ──────────────────────────────────────────
@@ -123,10 +125,12 @@ class ResourceGraph:
                     self._waits.pop(next_tid, None)
 
             elif etype == 'mutex_timeout' and tid is not None and maddr:
-                # 타임아웃: 대기 취소
+                # 타임아웃: 대기 취소 + 누적 카운트
                 self._waits.pop(tid, None)
-                if tid in self._waiters[maddr]:
+                if maddr in self._waiters and tid in self._waiters[maddr]:
                     self._waiters[maddr].remove(tid)
+                # 타임아웃 누적 — 반복 타임아웃은 잠재적 교착 신호
+                self._timeouts[maddr] = self._timeouts.get(maddr, 0) + 1
 
             # mutex_take 후 다음 이벤트가 give 없으면 보유 중으로 간주
             # (FreeRTOS는 성공적 take를 별도 hook으로 알리지 않음)
@@ -145,6 +149,7 @@ class ResourceGraph:
         results: List[GraphResult] = []
         results += self._detect_deadlock_cycle()
         results += self._detect_contention()
+        results += self._detect_timeout_pattern()
         return results
 
     def _detect_deadlock_cycle(self) -> List[GraphResult]:
@@ -267,6 +272,26 @@ class ResourceGraph:
                 confidence=confidence,
                 affected_tasks=[str(w) for w in waiters[:5]],
             ))
+        # RG-003: timeout 기반 경합 탐지
+        for maddr, count in self._timeouts.items():
+            if count >= 1:
+                mname = self._names.get(maddr, maddr)
+                results.append(GraphResult(
+                    pattern_id='RG-003',
+                    severity='High' if count >= 3 else 'Medium',
+                    description=(
+                        f"Mutex '{mname}': 취득 타임아웃 {count}회 "
+                        f"— 경합 또는 우선순위 역전 의심"
+                    ),
+                    causal_chain=[
+                        f"mutex '{mname}' 취득 타임아웃 {count}회",
+                        "보유 태스크가 오래 블로킹 중이거나 우선순위 역전 의심",
+                        "xSemaphoreTake 타임아웃 값 또는 보유 태스크 우선순위 검토 권장",
+                    ],
+                    evidence=[f"timeout_count={count}", f"mutex={mname}"],
+                    confidence=min(0.6 + count * 0.1, 0.9),
+                    affected_tasks=[],
+                ))
         return results
 
     @staticmethod
@@ -292,3 +317,29 @@ class ResourceGraph:
         self._holder.clear()
         self._waiters.clear()
         self._event_count = 0
+
+    def _detect_timeout_pattern(self) -> List[GraphResult]:
+        """반복 뮤텍스 타임아웃 감지 — 순환 대기 없이도 교착 위험 신호."""
+        results = []
+        for maddr, count in self._timeouts.items():
+            if count < 2:
+                continue
+            mname  = self._names.get(maddr, maddr)
+            holder = self._holder.get(maddr)
+            results.append(GraphResult(
+                pattern_id=f'TIMEOUT_PATTERN_{maddr}',
+                severity='High' if count >= 3 else 'Medium',
+                description=(
+                    f"Mutex '{mname}'에서 {count}회 타임아웃 누적 — "
+                    f"보유 태스크(id={holder}) 미해제 또는 우선순위 역전 가능성"
+                ),
+                causal_chain=[
+                    f"반복 mutex_timeout ({count}회)",
+                    f"뮤텍스 '{mname}' 획득 실패",
+                    "태스크 기아(starvation) 또는 잠재적 교착",
+                ],
+                evidence=[f"mutex_timeout × {count}"],
+                confidence=min(0.9, 0.5 + count * 0.15),
+                affected_tasks=[str(holder)] if holder is not None else [],
+            ))
+        return results

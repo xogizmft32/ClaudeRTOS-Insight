@@ -309,6 +309,11 @@ class AnalysisPipeline:
         """Stage 3: AI 호출 (Tier 자동 결정 + 지수 백오프 재시도)."""
         t = time.time()
 
+        # timeout=0 → AI 호출 비활성화 (offline 프리셋)
+        if cfg.timeout_s == 0:
+            self._stage('ai_call', False, t, skip_reason='timeout=0 (offline)')
+            return None
+
         # Tier 자동 결정
         if cfg.tier == 'auto':
             tier = AITier.TIER1 if triage == 'CRITICAL' else AITier.TIER2
@@ -331,7 +336,9 @@ class AnalysisPipeline:
                 _log.info("[Stage3] AI 완료 tier=%s %dms", tier, _ms(t))
                 return result
             except Exception as e:
-                _log.warning("[Stage3] 시도 %d/%d 실패: %s", attempt + 1, cfg.max_retries + 1, e)
+                _log.warning("[Stage3] 시도 %d/%d 실패: %s (%.0fs 후 재시도)",
+                             attempt + 1, cfg.max_retries + 1, e,
+                             cfg.retry_delay_s * (2 ** attempt))
                 if attempt < cfg.max_retries:
                     time.sleep(cfg.retry_delay_s * (2 ** attempt))
 

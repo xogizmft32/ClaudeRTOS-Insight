@@ -46,7 +46,7 @@ Environment Variables:
         """)
 
     parser.add_argument('--version', action='version',
-        version='ClaudeRTOS-Insight v5.0.0 (codebase v2.5.0)')
+        version='ClaudeRTOS-Insight v5.1.1 (codebase v2.5.0)')
     parser.add_argument('--validate',
         action='store_true',
         help='환경 검증 실행 (하드웨어 불필요)')
@@ -77,10 +77,6 @@ Environment Variables:
         default=None,
         metavar='PATH',
         help='분석 보고서 저장 경로 (.md)')
-    parser.add_argument('--version',
-        action='version',
-        version='ClaudeRTOS-Insight 4.9.0')
-
     args = parser.parse_args()
 
     # 환경 변수 적용
@@ -122,7 +118,7 @@ def _run_debug(args):
 
     수신기(Collector) → StreamingParser → 분석 파이프라인 → AI 분석
     """
-    print(f"ClaudeRTOS-Insight v5.0.0 — 디버깅 시작")
+    print(f"ClaudeRTOS-Insight v5.1.1 — 디버깅 시작")
     print(f"  포트:    {args.port}")
     print(f"  AI 모드: {args.ai_mode}")
     print(f"  프로파일:{args.profile}")
@@ -201,10 +197,38 @@ def _run_debug(args):
                         snap = json.loads(raw.decode())
                     except Exception:
                         continue
+                elif isinstance(raw, bytes):
+                    # 실제 하드웨어: Binary Protocol V4 → ITM 역디코딩 → 파싱
+                    from collector import ITMPortAccumulator, parse_itm_swo_frame
+                    from parsers.binary_parser import ParsedSnapshot, ParsedFault
+
+                    _parsed_pkts: list = []
+                    _acc = ITMPortAccumulator(on_packet=_parsed_pkts.append)
+                    _stats: dict = {}
+                    try:
+                        parse_itm_swo_frame(raw, _acc, _stats)
+                        _acc.flush()
+                    except Exception as _parse_err:
+                        _log.warning("[Main] ITM 파싱 오류: %s", _parse_err)
+                        continue
+
+                    if not _parsed_pkts:
+                        continue
+                    _pkt = _parsed_pkts[0]
+                    if isinstance(_pkt, ParsedSnapshot):
+                        snap = _pkt.to_dict()
+                    elif isinstance(_pkt, ParsedFault):
+                        # Fault 이슈 직접 분석
+                        _fault_issues = engine.analyze_fault(_pkt.to_dict())
+                        _fault_dicts  = [i.to_dict() for i in _fault_issues]
+                        if _fault_dicts:
+                            _log.warning("[Main] HardFault 감지: %s",
+                                         _fault_dicts[0].get('description',''))
+                        continue
+                    else:
+                        continue
                 else:
-                    # 실제 하드웨어: Binary Protocol V4 파싱
-                    # (BinaryParserV3는 StreamingParser 경유)
-                    continue  # 실제 파싱은 StreamingParser에서 처리
+                    continue
 
                 snap_count += 1
                 logger.log_snapshot(snap)

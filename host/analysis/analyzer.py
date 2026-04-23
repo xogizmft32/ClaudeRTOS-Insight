@@ -40,7 +40,8 @@ class Issue:
     def to_dict(self) -> Dict:
         return {
             'severity':       self.severity,
-            'type':           self.issue_type,
+            'type':           self.issue_type,   # 하위 호환 유지
+            'issue_type':     self.issue_type,   # 표준 키 (AIFallbackAnalyzer 등 사용)
             'description':    self.description,
             'affected_tasks': self.affected_tasks,
             'timestamp_us':   self.timestamp_us,

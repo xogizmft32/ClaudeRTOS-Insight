@@ -398,15 +398,15 @@ class SimulateCollector(BaseCollector):
             '_sim': True, 'sequence': seq, 'snapshot_count': seq+1,
             'timestamp_us': seq * 3_000_000,
             'uptime_ms':    seq * 3000,
-            'cpu_usage':    85 + (seq % 10),
+            'cpu_usage':    96 + min(3, seq % 4),  # seq=0: 96% → high_cpu 즉시 감지
             '_parser_stats': {},
             'heap': {'free': 2000 - seq*50, 'min': 1800,
                      'total': 8192, 'used_pct': 75 + seq},
             'tasks': [
                 {'task_id':0,'name':'Task0','priority':5,'state':2,
-                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':200,'runtime_us':0},
+                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':8   ,'runtime_us':0},
                 {'task_id':1,'name':'Task1','priority':3,'state':2,
-                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':180,'runtime_us':0},
+                 'state_name':'Blocked','cpu_pct':0,'stack_hwm':15  ,'runtime_us':0},
             ]
         }
         return json.dumps(snap).encode()
@@ -421,14 +421,14 @@ class SimulateCollector(BaseCollector):
             'tasks': [
                 {'task_id':0,'name':'HighTask','priority':5,'state':0,
                  'state_name':'Running','cpu_pct':60,
-                 'stack_hwm': max(5, 200 - seq*20), 'runtime_us': 0},
+                 'stack_hwm': max(5, 15 - seq*2), 'runtime_us': 0},
             ]
         }
         return json.dumps(snap).encode()
 
     def _gen_heap_exhaustion(self, seq: int) -> bytes:
         import json
-        free = max(50, 4000 - seq * 300)
+        free = max(50, 120 - seq * 10)   # seq=0: free=120B → low_heap 즉시 감지
         snap = {
             '_sim': True, 'sequence': seq, 'snapshot_count': seq+1,
             'timestamp_us': seq * 3_000_000, 'uptime_ms': seq * 3000,
@@ -437,7 +437,7 @@ class SimulateCollector(BaseCollector):
                      'total': 8192, 'used_pct': int((8192-free)/8192*100)},
             'tasks': [
                 {'task_id':0,'name':'AllocTask','priority':5,'state':0,
-                 'state_name':'Running','cpu_pct':70,'stack_hwm':150,'runtime_us':0},
+                 'state_name':'Running','cpu_pct':96    ,'stack_hwm':150,'runtime_us':0},
             ]
         }
         return json.dumps(snap).encode()

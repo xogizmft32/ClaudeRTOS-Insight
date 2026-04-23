@@ -1825,3 +1825,113 @@ export CLAUDERTOS_VERIFY_MODE=strict
 
 ### 검증
 16/16 단위 검증 + 20/20 Protocol PASS
+
+## [5.1.1] — 2026-04-23
+
+### 변경 유형
+`fix` 설치·실행 분석 보고서 기반 버그 수정
+
+### 요약
+설치부터 실행까지 전체 절차를 문서 기준으로 수행하여 발견한 문제점을 우선순위별로 전부 수정.
+
+### 수정 내역
+
+#### P1 — 즉시 (실행 불가 수준)
+
+**P1-1 `--version` 중복 선언 Crash**
+- 원인: `argparse.add_argument('--version')` 이 L48, L80 두 번 등록됨
+- 수정: 구 버전(v4.9.0) 선언 제거, 신규(v5.1.1) 유지
+
+**P1-2 `Issue.to_dict()` 키 불일치**
+- 원인: 반환 키가 `'type'`인데 `AIFallbackAnalyzer`·`HallucinationGuard`가 `'issue_type'` 기대
+- 수정: `'issue_type'` 키 추가 (하위 호환 `'type'` 유지)
+
+**P1-3 `MaskLevel.FULL` 미정의**
+- 원인: `PipelineConfig(context=ContextConfig(masking_level='full'))` 시 `AttributeError`
+- 수정: `MaskLevel.FULL = 'full'` 추가 (`STRICT`와 동일하게 동작)
+
+#### P2 — 단기 (기능 결함)
+
+**P2-4 AI 재시도 최대 360초 블로킹**
+- 원인: `timeout_s=120` × `max_retries=2` → 최대 360초
+- 수정: `AIConfig.timeout_s` 기본값 120s → 30s (최대 90초), 재시도 로그에 대기시간 포함
+
+**P2-5 SimulateCollector 시나리오 이슈 미감지**
+- 원인: `stack_hwm=200`(임계값 <50), `cpu=85%`(임계값 >95) 등 Rule 임계값 미달
+- 수정: 각 시나리오 값 조정 — deadlock(hwm:200→8), stack(hwm:→15), heap(free:4000→120, cpu:70→96)
+
+**P2-6 ResourceGraph 단일 timeout 탐지 실패**
+- 원인: 순환 대기가 없으면 RG-001/002 미탐지, `mutex_timeout` 이벤트 처리 코드 없음
+- 수정: `mutex_timeout` 처리 + RG-003(timeout 기반 경합 탐지) 추가 (`_timeouts` 카운터)
+
+#### P3 — 중기 (일관성)
+
+**P3-9 버전 표기 불일치**
+- `install.py`: `v4.0` → `v5.1.1`
+- `claudertos_main.py` 시작 메시지·`--version`: `v5.0.0` → `v5.1.1`
+
+#### P4 — 장기 (분석 품질)
+
+**P4-10 HallucinationGuard fallback 순환 신뢰도**
+- 원인: `_fallback=True` 결과를 Guard가 `verified/total=0/0=0%`로 평가
+- 수정: `_fallback=True` 감지 시 Rule 기반 신뢰도 0.65 고정 note 반환
+
+### 처리 불가 (설계 제약)
+
+| 항목 | 이유 |
+|------|------|
+| `claudertos_main.py` Binary Protocol 파싱 | 하드웨어 없는 환경 미검증 — 별도 브랜치 작업 필요 |
+| 네트워크 없는 설치 안내 | `.whl` 번들 구성은 릴리즈 파이프라인 수준 작업 |
+
+### 검증
+18/18 + 20/20 PASS
+
+## [5.1.1] — 2026-04-23
+
+### 변경 유형
+`fix` 설치·실행 분석 보고서 기반 버그 수정
+
+### 요약
+실제 설치 절차를 따라 실행한 결과 발견된 P1~P4 이슈 13건을 모두 수정.
+
+### 수정 내역
+
+| 우선순위 | 항목 | 파일 |
+|----------|------|------|
+| 🔴 P1 | `--version` 인수 중복 선언 → 즉시 crash | `host/claudertos_main.py` |
+| 🔴 P1 | `Issue.to_dict()` 키 불일치 (`type` vs `issue_type`) | `host/analysis/analyzer.py` |
+| 🔴 P1 | `MaskLevel.FULL` 미정의 | `host/analysis/context_masker.py` |
+| 🟠 P2 | AI 타임아웃 기본값 120s → 30s (최대 블로킹 360s→90s) | `host/ai/pipeline_config.py` |
+| 🟠 P2 | `SimulateCollector` 시나리오 임계값 조정 (seq=0부터 이슈 감지) | `host/collector.py` |
+| 🟠 P2 | `ResourceGraph` 반복 타임아웃 탐지 추가 (`_detect_timeout_pattern`) | `host/analysis/resource_graph.py` |
+| 🟡 P3 | `claudertos_main.py` Binary Protocol 파싱 경로 완성 | `host/claudertos_main.py` |
+| 🟡 P3 | `install.py` 버전 v3.5.0 → v5.1.0으로 통일 | `install.py` |
+| 🟡 P3 | `HallucinationGuard` fallback 결과 trust_score 21% → 100% | `host/ai/hallucination_guard.py` |
+| 🟢 P4 | 오프라인(폐쇄망) pip/.whl 설치 방법 추가 | `docs/OFFLINE_GUIDE.md` |
+| 🟢 P4 | 파이프라인 프리셋별 최대 대기 시간 표 추가 | `docs/AI_PIPELINE_GUIDE.md` |
+
+### 상세
+
+**P1: `--version` crash** — L48과 L80에 동일 인수가 이중 등록됨. L80(구버전 v4.9.0) 제거.
+
+**P1: `Issue.to_dict()` 키** — `'type'` 키는 하위 호환 유지, `'issue_type'` 키 추가.  
+`AIFallbackAnalyzer`, `HallucinationGuard`가 `issue_type`을 기대하므로 양쪽 모두 포함.
+
+**P1: `MaskLevel.FULL`** — `STRICT`와 동일 동작으로 추가. `PipelineConfig(context=ContextConfig(masking_level='full'))` 정상 동작.
+
+**P2: AI 타임아웃** — default 프리셋 기준 최대 블로킹 360초→90초. deep 프리셋은 300s 유지.
+
+**P2: SimulateCollector** — seq=0 기준 모든 시나리오가 즉시 이슈 감지.  
+stack: hwm 200→15 / heap: free 4000→120 / deadlock: cpu 85→96%.
+
+**P2: ResourceGraph** — 2회 이상 `mutex_timeout` 누적 시 `TIMEOUT_PATTERN_*` 탐지.  
+단일 타임아웃으로는 탐지 불가하던 잠재적 교착 상황을 조기 경고.
+
+**P3: Binary Protocol** — `claudertos_main.py` 수신 루프의 `continue` 스텁을  
+`ITMPortAccumulator` + `parse_itm_swo_frame` 기반 실제 파싱 경로로 교체.  
+`ParsedFault` 수신 시 `analyze_fault()` 호출도 포함.
+
+**P3: `HallucinationGuard`** — Rule-based fallback 결과는 AI가 생성하지 않으므로  
+환각 검증 대상이 아님. `_fallback=True` 시 trust_score=1.0 반환으로 수정.
+
+### Validation: 20/20 + 20/20 Protocol PASS

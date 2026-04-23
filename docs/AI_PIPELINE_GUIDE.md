@@ -200,3 +200,26 @@ cfg = PipelineConfig(postprocess=PostProcessConfig(cache_enabled=False))
 | `host/ai/rtos_debugger.py` | `use_pipeline()` 통합 지점 |
 | `host/ai/ai_fallback.py` | Stage 6 rule_based 전략 |
 | `host/ai/hallucination_guard.py` | Stage 4 신뢰도 검증 |
+
+
+---
+
+## 프리셋별 최대 대기 시간
+
+| 프리셋 | timeout | max_retries | **최대 총 대기** |
+|--------|---------|-------------|----------------|
+| `default()` | 30s | 2회 | **90초** |
+| `realtime()` | 30s | 0회 | **30초** |
+| `deep()` | 300s | 3회 | **1200초** |
+| `offline()` | — | — | **즉시** |
+
+> API 키 미설정 또는 네트워크 단절 시 위 시간만큼 대기 후 Fallback 전환됩니다.  
+> 빠른 응답이 필요하면 `PipelineConfig.realtime()`이나 `ai_mode='offline'`을 사용하세요.
+
+```bash
+# 즉시 응답 (AI 없음)
+python3 claudertos_main.py --port simulate --ai-mode offline
+
+# 빠른 AI (최대 30초)
+export CLAUDERTOS_PIPELINE_PRESET=realtime
+```

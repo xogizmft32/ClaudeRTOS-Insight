@@ -75,6 +75,19 @@ class HallucinationGuard:
         notes: List[VerificationNote] = []
         rule_issues = rule_issues or []
 
+        # Rule-based fallback 결과는 검증 불필요 — 이미 Rule에서 생성됨
+        if ai_result.get("_fallback"):
+            # fallback은 Rule에서 직접 생성한 결과 → 신뢰도 1.0 반환
+            # (AI가 생성하지 않았으므로 AI 환각 검증 대상이 아님)
+            notes.append(VerificationNote(
+                claim='Rule-based fallback — AI 검증 생략',
+                status='verified',
+                actual=1.0,
+                detail='_fallback=True: Rule 기반 결과 — 환각 없음',
+                severity='info',
+            ))
+            return notes
+
         for ai_issue in ai_result.get('issues', []):
             notes.extend(self._verify_issue(ai_issue, snap, rule_issues))
 
@@ -202,7 +215,10 @@ class HallucinationGuard:
             'unverifiable': unverifiable,
             'errors':       errors,
             'trust_score':  round(
-                verified / max(len(notes), 1), 2),
+                # fallback bypass note의 actual에 명시된 값 우선 사용
+                next((n.actual for n in notes if n.claim == 'Rule-based fallback — AI 검증 생략'
+                      and isinstance(n.actual, float)), None)
+                or (verified / max(len(notes), 1)), 2),
         }
 
     @staticmethod
