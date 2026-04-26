@@ -280,11 +280,10 @@ class RTOSDebuggerV3:
         try:
             resp = self._provider.generate(system, ctx_json, max_tok, tier)
         except Exception as _ai_err:
-            import warnings
-            warnings.warn(
-                f"AI 분석 실패 ({type(_ai_err).__name__}: {_ai_err}) "
-                "— Rule-based fallback 모드 활성화"
-            )
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                'AI 분석 실패 (%s) — Rule-based fallback 활성화',
+                type(_ai_err).__name__)
             return self._fallback.analyze(
                 snap, issues,
                 reason=f"{type(_ai_err).__name__}: {_ai_err}"
@@ -384,8 +383,8 @@ class RTOSDebuggerV3:
                 rpt_path = f'resource_report_{_t.strftime("%Y%m%d_%H%M%S")}.md'
                 self._reporter.save_markdown(rpt_path)
             except Exception as _rr_err:
-                import warnings
-                warnings.warn(f'ResourceReporter 저장 실패: {_rr_err}')
+                import logging as _lg
+                _lg.getLogger(__name__).warning('ResourceReporter 저장 실패: %s', _rr_err)
         candidates = self._learner.get_candidates()
         saved = self._learner.save_to_db(auto_save=auto_save)
         return len(saved)

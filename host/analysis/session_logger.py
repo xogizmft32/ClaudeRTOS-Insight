@@ -171,10 +171,13 @@ class SessionLogger:
                     t.get('stack_hwm', 0),
                 ])
 
-    def log_issue(self, issue: Dict) -> None:
-        """감지된 이슈 기록."""
+    def log_issue(self, issue) -> None:
+        """감지된 이슈 기록. Issue 객체 또는 dict 모두 허용."""
+        # Issue 객체는 to_dict()로 변환
+        if hasattr(issue, 'to_dict'):
+            issue = issue.to_dict()
         self._issues += 1
-        itype = issue.get('type', issue.get('issue_type', 'unknown'))
+        itype = issue.get('issue_type', issue.get('type', 'unknown'))
         sev   = issue.get('severity', 'Low')
         if sev == 'Critical':
             self._criticals += 1

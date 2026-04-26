@@ -259,7 +259,7 @@ class AnalysisPipeline:
             if verdict not in ('OK', 'WARNING', 'CRITICAL'):
                 verdict = 'WARNING'
         except Exception as e:
-            _log.warning("[Stage1] 트리아지 실패: %s", e)
+            _log.debug("[Stage1] 트리아지 실패 (키 없거나 오류): %s", e)
             verdict = 'WARNING'
         _log.info("[Stage1] Triage=%s", verdict)
         return self._stage('triage', True, t, output=verdict)
@@ -291,9 +291,13 @@ class AnalysisPipeline:
                 peripheral_state=ctx['snap'].get('peripheral') if cfg.include_peripheral else None,
             )
         except Exception as e:
-            _log.warning("[Stage2] 컨텍스트 빌드 오류: %s", e)
+            _log.warning("[Stage2] 컨텍스트 빌드 오류 (단순 JSON으로 폴백): %s", e)
             import json
             ctx_str = json.dumps({'snap': ctx['snap'], 'issues': ctx['issues']})
+            # Stage 결과에 경고 기록 — to_dict()의 _pipeline_meta.stages에 노출
+            self._stage('context_warn', False, t,
+                        skip_reason=f'컨텍스트 빌드 오류: {type(e).__name__}: {e}')
+            return ctx_str
 
         # 압축
         char_limit = cfg.max_tokens * 4   # 토큰 ≈ 문자/4
@@ -336,9 +340,8 @@ class AnalysisPipeline:
                 _log.info("[Stage3] AI 완료 tier=%s %dms", tier, _ms(t))
                 return result
             except Exception as e:
-                _log.warning("[Stage3] 시도 %d/%d 실패: %s (%.0fs 후 재시도)",
-                             attempt + 1, cfg.max_retries + 1, e,
-                             cfg.retry_delay_s * (2 ** attempt))
+                _log.warning("[Stage3] 시도 %d/%d 실패: %s",
+                             attempt + 1, cfg.max_retries + 1, e)
                 if attempt < cfg.max_retries:
                     time.sleep(cfg.retry_delay_s * (2 ** attempt))
 

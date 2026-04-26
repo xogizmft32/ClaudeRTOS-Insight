@@ -1935,3 +1935,36 @@ stack: hwm 200→15 / heap: free 4000→120 / deadlock: cpu 85→96%.
 환각 검증 대상이 아님. `_fallback=True` 시 trust_score=1.0 반환으로 수정.
 
 ### Validation: 20/20 + 20/20 Protocol PASS
+
+## [5.1.2] — 2026-04-24
+
+### 변경 유형
+`fix` 네트워크 연결 환경 검증에서 발견된 추가 버그 수정
+
+### 수정 내역
+
+#### 신규 발견 버그 2건
+
+**SessionLogger.log_issue(): Issue 객체 전달 시 AttributeError**
+- 원인: 함수 서명이 `Dict`를 기대하지만 `Issue` 객체를 직접 전달하면 `.get()` 호출 실패
+- 수정: `hasattr(issue, 'to_dict')` 검사 후 자동 변환
+
+**rtos_debugger.py: `UserWarning` → `logging.warning` 변환**
+- 원인: 두 곳에서 `import warnings; warnings.warn(...)` 사용
+- 수정: `logging.getLogger(__name__).warning(...)` 으로 일관성 확보
+
+#### 기존 미수정 항목 완결
+
+**P2-7 Stage2 Context 오류 시 사용자 인지**
+- 수정: `context_warn` stage 항목 추가 — 오류 발생 시 `_pipeline_meta.stages`에 `ok=False` 기록
+
+**P4-12 폐쇄망/네트워크 없는 설치 안내**
+- `QUICKSTART_COMPLETE_ko.md` Step 0 신규 추가
+- `pip download` → 번들 → `--no-index` 설치 절차 안내
+- AI 없이 Rule 기반만 실행하는 방법 병기
+
+**P4-13 파이프라인 타임아웃 문서화**
+- `AI_PIPELINE_GUIDE.md`: 프리셋별 최대 대기 시간 표 추가
+
+### 검증
+18/18 수정 완료 + 20/20 Protocol PASS

@@ -53,6 +53,27 @@ RAM:    2GB 이상 (N100 권장)
 
 ---
 
+## Step 0: 네트워크 없는 환경(폐쇄망) 준비 (선택)
+
+> 네트워크가 연결된 환경이라면 이 단계를 건너뜁니다.
+
+```bash
+# ─── 네트워크 환경에서 미리 실행 ───────────────────────────────
+# wheel 번들 생성
+pip download -r host/requirements.txt -d ./offline_pkgs/
+tar -czf claudertos_deps.tar.gz offline_pkgs/
+
+# ─── 폐쇄망에서 적용 ──────────────────────────────────────────
+tar -xzf claudertos_deps.tar.gz
+pip install --no-index --find-links=./offline_pkgs/ \
+    -r host/requirements.txt --break-system-packages
+```
+
+> **AI 없이 Rule 기반만 실행하는 경우 의존성 없이도 동작합니다:**
+> ```bash
+> python3 host/claudertos_main.py --port simulate --ai-mode offline
+> ```
+
 ## Step 1: 압축 해제 및 설치
 
 ```bash
