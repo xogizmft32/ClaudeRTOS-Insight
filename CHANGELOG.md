@@ -1968,3 +1968,88 @@ stack: hwm 200→15 / heap: free 4000→120 / deadlock: cpu 85→96%.
 
 ### 검증
 18/18 수정 완료 + 20/20 Protocol PASS
+
+## [5.1.2+test] — 2026-04-25
+
+### 변경 유형
+`docs` 검증 테스트 결과 보고서 추가
+
+### 추가 파일
+| 파일 | 내용 |
+|------|------|
+| `docs/TEST_RESULT_REPORT.md` | 절차서 기준 6개 시나리오 공식 테스트 결과 보고서 |
+
+### 테스트 결과 요약
+- 전체 **6/6 PASS** (SIM-01~03, HW-01~03)
+- 진단 정확도: **100% TPR**
+- 환각 발생률: **0%** (Rule+Fallback 구조)
+- 오탐률(FPR): **0%**
+- 평균 분석 시간: **0.22s/건**
+
+## [5.1.3] — 2026-04-26
+
+### 변경 유형
+`fix` `feat` 검증 테스트 결과 기반 개선
+
+### 요약
+절차서 6개 시나리오 실행 후 발견한 4가지 문제 수정.
+
+### 수정 내역
+
+#### fix: ResourceGraph RG-001 미작동 (SIM-02 Deadlock)
+
+| 항목 | 내용 |
+|------|------|
+| **원인** | `mutex_acquired` 이벤트 처리 코드가 없어 `_holder` 미설정 → Wait-For Graph 구성 불가 |
+| **수정** | `apply_timeline()`에 `mutex_acquired` 이벤트 분기 추가 |
+| **효과** | `traceMUTEX_TAKEN` hook 기록 시 RG-001 순환 DFS 탐지 활성화 |
+
+```python
+# 이제 동작:
+rg.apply_timeline([
+    {'type':'mutex_acquired','mutex':'0xR1','task_id':0},  # Task0이 R1 보유
+    {'type':'mutex_acquired','mutex':'0xR2','task_id':1},  # Task1이 R2 보유
+    {'type':'mutex_take',    'mutex':'0xR2','task_id':0},  # Task0이 R2 대기
+    {'type':'mutex_take',    'mutex':'0xR1','task_id':1},  # Task1이 R1 대기
+])
+# → RG-001: "Deadlock cycle detected: Task0 → Task1 → (cycle)"
+```
+
+#### fix: Triage disabled 시 stage 기록 누락 (Pipeline 가시성)
+
+- `PipelineConfig.offline()` 등 triage 비활성화 시 stage 목록에서 `triage`가 누락됨
+- 수정: disabled 시에도 `ok=True, skip_reason='disabled'` 로 stage 기록
+- `audit_log`에서 각 stage 상태를 명확히 확인 가능
+
+#### feat: Pipeline audit_log 추가
+
+- `PipelineResult.to_dict()['_pipeline_meta']['audit_log']` 신규
+- 각 stage의 실행 결과를 사람이 읽기 쉬운 형태로 기록
+
+```python
+result['_pipeline_meta']['audit_log']
+# ['[OK] prefilter: pass (0ms)',
+#  '[OK] triage: 완료 (0ms)',
+#  '[OK] context: 1587 (1ms)',
+#  '[SKIP/FAIL] ai_call: timeout=0 (offline)']
+```
+
+#### feat: CFSR 비트 파싱 — HardFault 세부 진단 (HW-01)
+
+`AnalysisEngine.analyze_fault()`에 CFSR 레지스터 비트 해석 추가.
+
+| CFSR 비트 | 이슈 타입 | 설명 |
+|-----------|-----------|------|
+| INVPC (bit2) | `isr_invalid_exc_return` | ISR에서 비ISR API 호출 — FromISR 함수 사용 필요 |
+| NOCP (bit3) | `coprocessor_not_present` | FPU 미활성화 상태에서 FPU 명령어 실행 |
+| PRECISERR (bit9) | `bus_fault_precise` | 정확한 주소의 버스 오류 — BFAR 확인 |
+| DACCVIOL (bit1) | `memmanage_data_access` | MPU 위반 또는 NULL 포인터 역참조 |
+
+### 아키텍처 제약 (수정 불가)
+
+| 항목 | 이유 |
+|------|------|
+| RG-001 완전 동작 | FreeRTOS traceMUTEX_TAKEN hook 없으면 mutex_acquired 이벤트 미생성. 펌웨어 hook 추가 필요 |
+| Fallback trust 실질 검증 | Fallback 결과는 Rule 기반이라 AI 응답과 교차 검증 불가 — 구조적 한계 |
+
+### Validation: 14/14 + 20/20 PASS

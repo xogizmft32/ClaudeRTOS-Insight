@@ -248,7 +248,51 @@ class AnalysisEngine:
             ai_ready=(self._mode != 'offline'),
         )
         self._issues.append(issue)
-        return [issue]
+
+        # ── CFSR(Combined Fault Status Register) 비트 해석 ─────────────
+        cfsr = fault.get('cfsr', 0)
+        extra_issues: List[Issue] = []
+        if cfsr:
+            task_name = fault.get('active_task', {}).get('name', '?')
+            ts        = fault.get('timestamp_us', 0)
+            # UsageFault INVPC(bit2): ISR에서 비ISR API 호출
+            if cfsr & 0x0004:
+                extra_issues.append(Issue(
+                    severity='Critical', issue_type='isr_invalid_exc_return',
+                    description=(
+                        "ISR 컨텍스트 오류(INVPC): xQueueSend() 등 비ISR API를 "
+                        "ISR에서 호출한 것으로 추정. "
+                        "FromISR 접미사 함수(예: xQueueSendFromISR)로 교체하라."),
+                    affected_tasks=[task_name], timestamp_us=ts,
+                    detail={'cfsr': hex(cfsr), 'bit': 'INVPC(bit2)'}, ai_ready=True))
+            # UsageFault NOCP(bit3): 미구현 코프로세서(FPU 미활성화)
+            if cfsr & 0x0008:
+                extra_issues.append(Issue(
+                    severity='Critical', issue_type='coprocessor_not_present',
+                    description=(
+                        "NOCP: 미구현 코프로세서 명령어. "
+                        "FPU를 사용하는 코드가 있으나 CubeMX에서 FPU가 비활성화돼 있음."),
+                    affected_tasks=[task_name], timestamp_us=ts,
+                    detail={'cfsr': hex(cfsr), 'bit': 'NOCP(bit3)'}, ai_ready=True))
+            # BusFault PRECISERR(bit9): 정확한 주소의 버스 오류
+            if cfsr & 0x0200:
+                extra_issues.append(Issue(
+                    severity='Critical', issue_type='bus_fault_precise',
+                    description=(
+                        "PRECISERR: 정확한 버스 오류 — "
+                        "잘못된 메모리 주소 접근. BFAR 레지스터 값을 확인하라."),
+                    affected_tasks=[task_name], timestamp_us=ts,
+                    detail={'cfsr': hex(cfsr), 'bit': 'PRECISERR(bit9)'}, ai_ready=True))
+            # MemManage DACCVIOL(bit1): 데이터 접근 MPU 위반
+            if cfsr & 0x0002:
+                extra_issues.append(Issue(
+                    severity='Critical', issue_type='memmanage_data_access',
+                    description=(
+                        "DACCVIOL: 데이터 접근 위반 — "
+                        "NULL 포인터 역참조 또는 MPU 보호 영역 침범."),
+                    affected_tasks=[task_name], timestamp_us=ts,
+                    detail={'cfsr': hex(cfsr), 'bit': 'DACCVIOL(bit1)'}, ai_ready=True))
+        return [issue] + extra_issues
 
     def get_summary(self) -> Dict:
         counts = {'Critical':0,'High':0,'Medium':0,'Low':0}

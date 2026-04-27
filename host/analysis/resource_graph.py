@@ -112,6 +112,15 @@ class ResourceGraph:
                 if tid not in self._waiters[maddr]:
                     self._waiters[maddr].append(tid)
 
+            elif etype == 'mutex_acquired' and tid is not None and maddr:
+                # 명시적 취득 이벤트 (traceMUTEX_TAKEN / xSemaphoreTake 성공)
+                # FreeRTOS traceTAKE_MUTEX hook에서 발생 가능
+                self._holds[tid].add(maddr)
+                self._holder[maddr] = tid
+                self._waits.pop(tid, None)
+                if tid in self._waiters.get(maddr, []):
+                    self._waiters[maddr].remove(tid)
+
             elif etype == 'mutex_give' and tid is not None and maddr:
                 # 반환: holds 제거, 대기 큐 선두 → holder
                 self._holds[tid].discard(maddr)

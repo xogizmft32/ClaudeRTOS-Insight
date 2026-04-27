@@ -86,6 +86,14 @@ class PipelineResult:
     _fallback:          bool  = False
 
     def to_dict(self) -> Dict:
+        # audit_log: 각 stage 요약 (사람이 읽기 쉬운 형태)
+        audit = []
+        for s in self.stage_results:
+            if s.ok:
+                audit.append(f"[OK] {s.stage}: {s.output or '완료'} ({s.duration_ms}ms)")
+            else:
+                reason = s.skip_reason or '실패'
+                audit.append(f"[SKIP/FAIL] {s.stage}: {reason}")
         return {
             'issues':             self.issues,
             'session_summary':    self.session_summary,
@@ -99,6 +107,7 @@ class PipelineResult:
                 'cache_hit':       self.cache_hit,
                 'triage_result':   self.triage_result,
                 'trust_score':     self.trust_score,
+                'audit_log':       audit,
             },
         }
 
@@ -178,6 +187,11 @@ class AnalysisPipeline:
             if triage == 'OK':
                 _log.info("[Pipeline] Triage=OK — 분석 불필요")
                 return self._ok_result(t0, triage)
+        else:
+            # disabled여도 stage 실행 기록 남김
+            import time as _t
+            self._stage('triage', True, _t.time(),
+                        skip_reason='disabled (triage.enabled=False)')
 
         # ── Stage 2: Context ─────────────────────────────────
         ctx_str = self._s2_context(ctx, cfg.context)

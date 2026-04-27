@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClaudeRTOS-Insight Installer  v5.1.2
+ClaudeRTOS-Insight Installer  v5.1.3
 
 사용자 FreeRTOS 프로젝트에 ClaudeRTOS-Insight를 자동으로 통합합니다.
 
@@ -505,7 +505,7 @@ def main():
     args = ap.parse_args()
 
     print(f"\n{c(GREEN,'╔══════════════════════════════════════════╗')}")
-    print(f"{c(GREEN,'║  ClaudeRTOS-Insight Installer  v5.1.2    ║')}")
+    print(f"{c(GREEN,'║  ClaudeRTOS-Insight Installer  v5.1.3    ║')}")
     print(f"{c(GREEN,'╚══════════════════════════════════════════╝')}")
 
     # ── 상태 확인 모드

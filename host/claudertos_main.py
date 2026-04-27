@@ -46,7 +46,7 @@ Environment Variables:
         """)
 
     parser.add_argument('--version', action='version',
-        version='ClaudeRTOS-Insight v5.1.2 (codebase v2.5.0)')
+        version='ClaudeRTOS-Insight v5.1.3 (codebase v2.5.0)')
     parser.add_argument('--validate',
         action='store_true',
         help='환경 검증 실행 (하드웨어 불필요)')
@@ -118,7 +118,7 @@ def _run_debug(args):
 
     수신기(Collector) → StreamingParser → 분석 파이프라인 → AI 분석
     """
-    print(f"ClaudeRTOS-Insight v5.1.2 — 디버깅 시작")
+    print(f"ClaudeRTOS-Insight v5.1.3 — 디버깅 시작")
     print(f"  포트:    {args.port}")
     print(f"  AI 모드: {args.ai_mode}")
     print(f"  프로파일:{args.profile}")
