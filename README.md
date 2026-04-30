@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-5.1.3-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.2.0-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-20%2F20%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -18,7 +18,7 @@ CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 
 ```
 사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
 AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
-결과  → v2.3 → v5.1.3, 135개 파일, 20/20 검증 통과
+결과  → v2.3 → v5.2.0, 135개 파일, 20/20 검증 통과
 ```
 
 ---

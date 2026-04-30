@@ -2053,3 +2053,135 @@ result['_pipeline_meta']['audit_log']
 | Fallback trust 실질 검증 | Fallback 결과는 Rule 기반이라 AI 응답과 교차 검증 불가 — 구조적 한계 |
 
 ### Validation: 14/14 + 20/20 PASS
+
+## [5.2.0] — 2026-04-27
+
+### 변경 유형
+`feat` AI 처리기 3축 고도화 (하위 호환)
+
+### 요약
+AI 에이전트 성능 분석을 바탕으로 컨텍스트 품질·멀티턴 에이전트·Few-Shot 검색
+세 방향으로 AI 처리기를 고도화했다.
+
+### 신규 파일
+
+| 파일 | 역할 |
+|------|------|
+| `host/ai/context_builder.py` | 고품질 컨텍스트 생성기 |
+| `host/ai/agent_loop.py` | 멀티턴 에이전트 루프 |
+| `host/ai/few_shot_injector.py` | Few-Shot 유사 사례 주입기 |
+
+---
+
+### Axis 1 — 컨텍스트 품질 향상 (`context_builder.py`)
+
+**기존 문제**: `build_context()`가 수치를 나열하는 수준이라 AI가 추가 추론을 많이 해야 했음.
+
+**개선 내용**:
+
+`SystemProfile` — 타겟 시스템 정적 프로파일을 모든 세션에 고정 주입:
+```python
+profile = SystemProfile(
+    mcu="STM32F446RE",
+    task_roles={'CommTask': 'UART 송수신', 'SensorTask': '센서 수집'},
+    stack_policy="tight",
+    notes="배터리 구동, 저전력 필수",
+)
+```
+
+`build_diagnostic_hints()` — 단순 수치가 아닌 분석된 결론 제공:
+```
+🔴 Critical(2건): stack_overflow_imminent, cpu_overload
+⏸ 최고우선순위 Blocked: 'HighPriTask' (priority=5, hwm=6words)
+📈 CPU 상승 추세: +8.4%/s → 60초 후 예상 99%
+⚠ 인과 관계: heap 고갈 → malloc 실패 → HardFault
+```
+
+`infer_causal_chain()` — 이슈 간 인과 관계 8종 사전 추론 내장.
+
+---
+
+### Axis 2 — 멀티턴 에이전트 루프 (`agent_loop.py`)
+
+**기존 문제**: 단발 호출(single-shot)로는 AI가 필요한 정보를 선택적으로 요청할 수 없었음.
+
+**개선 내용**: 에이전트가 6개 분석 도구를 호출하며 점진적으로 진단을 심화한다.
+
+```python
+agent = DiagnosticAgent(
+    provider=create_provider('anthropic'),
+    max_turns=4,
+    tier=AITier.TIER1,
+    profile=profile,
+)
+result = agent.run(snap, issues, trends=trends, timeline=tl)
+
+print(result.root_cause)            # "pvPortMalloc 후 vPortFree 미호출"
+print(result.recommended_actions)   # ["할당-해제 쌍 확인", ...]
+print(result.fix_code)              # AI가 생성한 수정 코드
+print(result.turn_count)            # 3 (3턴 소요)
+print(result.tool_calls)            # [{'tool':'get_trend_data',...}, ...]
+```
+
+6개 분석 도구:
+- `get_trend_data`      — CPU/Heap 트렌드 슬로프 및 예측값
+- `get_task_detail`     — 특정 태스크 스택/CPU/상태
+- `get_heap_detail`     — 힙 단편화·여유·최소값
+- `get_timeline_summary`— 타임라인 이벤트 요약
+- `get_issue_detail`    — 특정 이슈 상세 정보
+- `get_peripheral_status` — I2C/SPI/GPIO 상태
+
+---
+
+### Axis 3 — Few-Shot 유사 사례 주입 (`few_shot_injector.py`)
+
+**기존 문제**: `SessionLearner`는 임베딩 없이 단순 저장만, `FewShotInjector` 모듈 자체가 없었음.
+
+**개선 내용**: 이슈 타입 Jaccard + CPU/Heap 버킷 + 태스크 수로 유사도를 계산,
+관련성 높은 사례를 컨텍스트에 자동 주입한다.
+
+```python
+injector = FewShotInjector()
+
+# 진단 후 사례 기록
+injector.record(snap, issues,
+    diagnosis="힙 누수 확인됨",
+    root_cause="pvPortMalloc 후 vPortFree 미호출",
+    fix="할당-해제 쌍 추적 추가",
+    confidence=0.88)
+
+# 다음 유사 상황에서 자동 주입
+examples = injector.get_relevant(snap, issues, top_k=3)
+few_shot_block = injector.inject_to_context(snap, issues)
+```
+
+8개 내장 시드 사례:
+- heap_exhaustion, stack_overflow_imminent, priority_inversion
+- isr_invalid_exc_return, i2c_nack_storm, cpu_overload
+- heap_leak_trend, bus_fault_precise
+
+---
+
+### 통합 사용 예시
+
+```python
+from ai.context_builder  import SystemProfile, build_enhanced_context
+from ai.few_shot_injector import FewShotInjector
+from ai.agent_loop       import DiagnosticAgent
+from ai.providers.factory import create_provider
+
+profile  = SystemProfile(mcu="STM32F446RE", task_roles={...})
+injector = FewShotInjector()
+
+# 고품질 컨텍스트 + Few-Shot 통합
+ctx = build_enhanced_context(snap, issues, profile=profile, trends=trends)
+ctx += "\n\n" + injector.inject_to_context(snap, issues, top_k=2)
+
+# 멀티턴 에이전트로 심층 진단
+agent  = DiagnosticAgent(create_provider('anthropic'), max_turns=4, profile=profile)
+result = agent.run(snap, issues, trends=trends, timeline=tl)
+injector.record(snap, issues, diagnosis=result.final_diagnosis,
+                root_cause=result.root_cause, fix=result.fix_code or "")
+```
+
+### Validation: 21/21 + 20/20 PASS
