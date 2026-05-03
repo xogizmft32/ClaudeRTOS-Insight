@@ -47,8 +47,8 @@ from .hallucination_guard  import HallucinationGuard
 from .ai_fallback          import AIFallbackAnalyzer
 from .pipeline_config      import PipelineConfig
 from .analysis_pipeline    import AnalysisPipeline
-from patterns.session_learner import SessionLearner
-from .providers.base import AITier
+from ..patterns.session_learner import SessionLearner  # B-02: 상대 import 통일
+# B-03: AITier은 위 .providers에서 이미 import — 중복 제거
 
 
 # ── 심각도 → Tier 매핑 (provider 무관) ───────────────────────

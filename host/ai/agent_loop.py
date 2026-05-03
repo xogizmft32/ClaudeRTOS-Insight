@@ -302,15 +302,17 @@ class DiagnosticAgent:
 
             conversation.append({'role': 'assistant', 'content': raw})
 
-            # JSON 파싱 시도
+            # L-02: JSONDecoder.raw_decode()로 중첩 JSON을 안전하게 파싱
+            # greedy r'\{.*\}' 대신 첫 번째 완전한 JSON 객체만 추출
             try:
-                import re
-                json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-                if not json_match:
-                    break
-                action_data = json.loads(json_match.group())
-            except json.JSONDecodeError:
-                break
+                decoder = json.JSONDecoder()
+                start = raw.find('{')
+                if start == -1:
+                    action_data = {}
+                else:
+                    action_data, _ = decoder.raw_decode(raw, start)
+            except (json.JSONDecodeError, ValueError):
+                action_data = {}
 
             action = action_data.get('action', '')
 
@@ -341,12 +343,35 @@ class DiagnosticAgent:
                         'content': f"[오류] 도구 '{tool_name}'을 찾을 수 없다. 사용 가능: {list(_tools.keys())}",
                     })
             else:
-                # action 필드 없음 → 마지막 턴에서 강제 요청
+                # action 필드 없음 → 마지막 턴에서 강제 요청 후 루프 종료
                 if turn == self._max_turns:
                     conversation.append({
                         'role': 'user',
                         'content': "지금까지의 분석을 바탕으로 final_diagnosis JSON을 제공하라.",
                     })
+                    # L-03: 강제 요청에 대한 응답을 한 번 더 수신
+                    try:
+                        full_conversation = "\n".join(
+                            f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}"
+                            for m in conversation)
+                        resp2 = self._provider.generate(
+                            system=self.SYSTEM_PROMPT,
+                            context=full_conversation,
+                            max_tokens=2048,
+                            tier=self._tier,
+                        )
+                        raw2 = resp2.text.strip()
+                        conversation.append({'role': 'assistant', 'content': raw2})
+                        try:
+                            start2 = raw2.find('{')
+                            if start2 != -1:
+                                fd, _ = decoder.raw_decode(raw2, start2)
+                                if fd.get('action') == 'final_diagnosis':
+                                    final_result = fd
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    except Exception as e:
+                        _log.warning("[Agent] 마지막 턴 추가 호출 실패: %s", e)
 
         # 결과 생성 (API 실패 또는 max_turns 도달 시 fallback)
         total_ms = int((time.time() - t0) * 1000)

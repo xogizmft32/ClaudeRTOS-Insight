@@ -1,6 +1,6 @@
 # 문서 인덱스 — ClaudeRTOS-Insight
 
-전체 31개 문서 구조와 용도 안내.  
+전체 38개 문서 구조와 용도 안내.  
 README의 각 섹션에서 바로 접근 가능합니다.
 
 ---
@@ -35,9 +35,20 @@ README의 각 섹션에서 바로 접근 가능합니다.
 |------|------|------|
 | [AI_USAGE_GUIDE_ko.md](AI_USAGE_GUIDE_ko.md) | AI 사용 흐름 (한국어) | Cache, TokenOptimizer, Queue |
 | [AI_USAGE_GUIDE.md](AI_USAGE_GUIDE.md) | AI 사용 가이드 (영문) | |
+| [AI_PIPELINE_GUIDE.md](AI_PIPELINE_GUIDE.md) | **AI 파이프라인 설정** | 7단계 파이프라인 및 프리셋 |
 | [LOCAL_AI_GUIDE.md](LOCAL_AI_GUIDE.md) | **Ollama 로컬 AI** | 모델별 특성, 운영 전략 |
 | [PATTERN_GUIDE_ko.md](PATTERN_GUIDE_ko.md) | 패턴 DB 추가·수정·학습 (한국어) | |
 | [PATTERN_GUIDE.md](PATTERN_GUIDE.md) | Pattern DB 가이드 (영문) | schema, constraints |
+
+---
+
+## 🤝 AI Provider / Agent
+
+| 문서 | 내용 | 비고 |
+|------|------|------|
+| [CLAUDE_AGENT_GUIDE.md](CLAUDE_AGENT_GUIDE.md) | **Claude Agent SDK** 멀티턴 에이전트 | DiagnosticAgent 사용법 |
+| [GEMINI_CLI_GUIDE.md](GEMINI_CLI_GUIDE.md) | **Gemini CLI** headless 연동 | 무료 할당량, 설정 |
+| [CODEX_CLI_GUIDE.md](CODEX_CLI_GUIDE.md) | **Codex CLI** 연동 | ChatGPT 구독 활용 |
 
 ---
 
@@ -45,7 +56,8 @@ README의 각 섹션에서 바로 접근 가능합니다.
 
 | 문서 | 내용 | 비고 |
 |------|------|------|
-| [SYSTEM_REVIEW.md](SYSTEM_REVIEW.md) | **전체 파이프라인** [1]~[18] | 컴포넌트 상세, 알려진 한계 |
+| [SYSTEM_REVIEW.md](SYSTEM_REVIEW.md) | **전체 파이프라인** [1]~[21] | 컴포넌트 상세, 알려진 한계 |
+| [PIPELINE_FLOW.md](PIPELINE_FLOW.md) | **파이프라인 데이터 흐름** | 수신→파싱→분석→AI 전체 경로 |
 | [WCET_ANALYSIS.md](WCET_ANALYSIS.md) | CPU/RAM 오버헤드 추정치 | 추정치임 명시 |
 | [PRIORITY_BUFFER_ANALYSIS.md](PRIORITY_BUFFER_ANALYSIS.md) | Priority Buffer 설계 | V1 vs V2 비교 |
 | [CONCURRENCY_VERIFICATION.md](CONCURRENCY_VERIFICATION.md) | 동시성 안전성 | lock-free 분석 |
@@ -78,6 +90,7 @@ README의 각 섹션에서 바로 접근 가능합니다.
 |------|------|------|
 | [TESTING_GUIDE.md](TESTING_GUIDE.md) | 테스트 시나리오 | Fault Injection, Replay |
 | [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md) | 릴리즈 전 체크리스트 | |
+| [TEST_RESULT_REPORT.md](TEST_RESULT_REPORT.md) | 테스트 결과 보고서 | 20/20 Protocol 검증 결과 |
 
 ---
 
@@ -85,7 +98,7 @@ README의 각 섹션에서 바로 접근 가능합니다.
 
 | 문서 | 내용 |
 |------|------|
-| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v4.9.0) |
+| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.2.1) |
 | [BUGFIX_REPORT.md](BUGFIX_REPORT.md) | 주요 버그 수정 기록 |
 
 ---
@@ -99,12 +112,17 @@ README의 각 섹션에서 바로 접근 가능합니다.
 | ITM/UART 선택 | **TRANSPORT_GUIDE** |
 | FreeRTOS Hook 설정 | **FREERTOS_HOOK_GUIDE** |
 | AI 분석 흐름 | AI_USAGE_GUIDE |
+| AI 파이프라인 설정 | **AI_PIPELINE_GUIDE** |
+| 멀티턴 에이전트 | **CLAUDE_AGENT_GUIDE** |
 | 패턴 DB 추가 | PATTERN_GUIDE |
 | 오프라인 운용 | **OFFLINE_GUIDE** |
 | 민감 정보 마스킹 | OFFLINE_GUIDE, AI_USAGE_GUIDE |
 | 로컬 AI | **LOCAL_AI_GUIDE** |
+| Gemini CLI 연동 | **GEMINI_CLI_GUIDE** |
+| Codex CLI 연동 | **CODEX_CLI_GUIDE** |
 | Peripheral 디버깅 | FAULT_INJECTION_GUIDE |
 | 세션 로깅/보고서 | SYSTEM_REVIEW |
+| 데이터 흐름 참조 | **PIPELINE_FLOW** |
 | 하이젠버그 방지 | **HEISENBUG_GUIDE** |
 | 릴리즈 빌드 | TRACE_GUIDE |
 | MISRA 준수 | **MISRA_C_GUIDELINES** |

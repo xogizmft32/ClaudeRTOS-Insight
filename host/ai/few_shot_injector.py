@@ -24,10 +24,13 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import logging
 import os
 import pickle
 import time
 from typing import Dict, List, Optional, Tuple
+
+_log = logging.getLogger(__name__)
 
 
 # ── 저장 사례 ─────────────────────────────────────────────────────
@@ -212,8 +215,8 @@ class FewShotInjector:
 
     def get_relevant(self, snap: Dict, issues: List[Dict],
                      top_k: int = 3,
-                     min_similarity: float = 0.2) -> List[DiagnosticExample]:
-        """현재 상황과 유사한 사례 top_k개 반환."""
+                     min_similarity: float = 0.2) -> List[Tuple[float, 'DiagnosticExample']]:
+        """현재 상황과 유사한 사례 top_k개를 (유사도, 사례) 튜플 리스트로 반환."""
         issue_types = [i.get('issue_type', i.get('type', '?')) for i in issues]
         cpu_bkt     = _cpu_bucket(snap.get('cpu_usage', 0))
         heap_bkt    = _heap_bucket(snap.get('heap', {}).get('used_pct', 0))
@@ -226,17 +229,17 @@ class FewShotInjector:
                 scored.append((sim, ex))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [ex for _, ex in scored[:top_k]]
+        return scored[:top_k]  # L-04: (score, example) 튜플 반환으로 변경
 
     def inject_to_context(self, snap: Dict, issues: List[Dict],
                           top_k: int = 3) -> str:
-        """컨텍스트에 삽입할 Few-Shot 문자열 생성."""
-        examples = self.get_relevant(snap, issues, top_k=top_k)
-        if not examples:
+        """컨텍스트에 삽입할 Few-Shot 문자열 생성 (유사도 점수 포함)."""
+        scored = self.get_relevant(snap, issues, top_k=top_k)
+        if not scored:
             return ""
         lines = ["## 유사 사례 (Few-Shot)"]
-        for i, ex in enumerate(examples, 1):
-            lines.append(f"\n### 사례 {i} (유사도 포함)")
+        for i, (sim, ex) in enumerate(scored, 1):
+            lines.append(f"\n### 사례 {i} (유사도: {sim:.2f})")  # L-04: 실제 점수 출력
             lines.append(ex.summary())
         return "\n".join(lines)
 
@@ -287,7 +290,3 @@ def _heap_bucket(used_pct: int) -> str:
     if used_pct < 70: return 'ok'
     if used_pct < 90: return 'warn'
     return 'crit'
-
-
-import logging
-_log = logging.getLogger(__name__)

@@ -89,12 +89,33 @@ Host (N100 PC)
   │         영속화: ~/.claudertos_cache/ai_responses.json
   │         TTL: Critical=1h, 그 외=24h
   │
-  └─ [16] AI Provider            Cloud 또는 Local LLM
-           providers/anthropic.py  Claude Sonnet(TIER1) / Haiku(TIER2)
-           providers/openai.py     GPT-4o / GPT-4o-mini
-           providers/google.py     Gemini Pro / Flash
-           providers/ollama.py     Llama3 / Qwen2.5 (비용 $0)
-           환경 변수: CLAUDERTOS_AI_PROVIDER
+  ├─ [16] AI Provider            Cloud 또는 Local LLM
+  │         providers/anthropic.py  Claude Sonnet(TIER1) / Haiku(TIER2)
+  │         providers/openai.py     GPT-4o / GPT-4o-mini
+  │         providers/google.py     Gemini Pro / Flash
+  │         providers/ollama.py     Llama3 / Qwen2.5 (비용 $0)
+  │         환경 변수: CLAUDERTOS_AI_PROVIDER
+  │
+  ├─ [17] context_builder.py     ★ v5.2.0 강화 컨텍스트 조립 (Axis1)
+  │         SystemProfile: MCU/OS/클럭/플래시 정보 구조화
+  │         build_enhanced_context(): 스냅샷+이슈+트렌드 통합
+  │         build_diagnostic_hints(): CPU/Heap 추세 자동 해석
+  │         infer_causal_chain(): 이슈 목록 → 인과관계 체인 추론
+  │
+  ├─ [18] agent_loop.py          ★ v5.2.0 멀티턴 에이전트 (Axis2)
+  │         DiagnosticAgent: 최대 6턴 call_tool / final_diagnosis 루프
+  │         6개 내장 도구: get_task_details, get_memory_map,
+  │           get_timeline, get_fault_history, get_peripheral_state,
+  │           suggest_fix
+  │         JSONDecoder.raw_decode()로 중첩 JSON 안전 파싱
+  │         max_turns 소진 시 추가 요청 후 fallback 결정
+  │
+  └─ [19] few_shot_injector.py   ★ v5.2.0 독립 AI 주입형 (Axis3)
+           host/ai/ 에 위치 (host/analysis/ 구버전과 별도)
+           Jaccard + CPU/Heap 버킷 + 태스크 수 기반 유사도
+           8개 내장 시드 사례, pickle DB 영속화
+           get_relevant() → (score, example) 튜플 반환
+           inject_to_context() → 유사도 점수 포함 출력
 ```
 
 ---
@@ -375,9 +396,11 @@ result['_verification'] = {
 - 수치 주장 (hwm, cpu% ±5% 허용 오차)
 - 이슈 타입 (Rule 엔진 결과 대조, 카테고리 매핑 포함)
 
-### Few-shot Injector (`host/analysis/few_shot_injector.py`)
+### Few-shot Injector — 두 가지 구현
 
-과거 세션 로그에서 유사 사례를 찾아 AI 컨텍스트에 자동 포함.
+#### (구) 파이프라인 통합형 (`host/analysis/few_shot_injector.py`)
+
+`build_context()` 내부에서 자동 실행. 세션 로그(`.jsonl`)에서 유사 사례를 찾아 컨텍스트에 삽입.
 
 ```python
 # build_context() 내부에서 자동 실행
@@ -392,6 +415,31 @@ result['_verification'] = {
 ```
 
 수동 사례 추가: `FewShotInjector.add_example(issue_type, summary, resolved=True)`
+
+#### (신 v5.2.0) 독립 AI 주입형 (`host/ai/few_shot_injector.py`)
+
+Jaccard 유사도 + CPU/Heap 버킷 + 태스크 수로 점수 계산. 8개 내장 시드 포함.
+
+```python
+from ai.few_shot_injector import FewShotInjector
+
+injector = FewShotInjector()
+
+# 진단 후 사례 기록 (구버전의 add_example 대신 record 사용)
+injector.record(snap, issues,
+    diagnosis="힙 누수 확인됨",
+    root_cause="pvPortMalloc 후 vPortFree 미호출",
+    fix="할당-해제 쌍 추적 추가",
+    confidence=0.88)
+
+# 다음 유사 상황에서 자동 주입 — 유사도 점수 포함 출력
+few_shot_block = injector.inject_to_context(snap, issues, top_k=3)
+# 출력: "### 사례 1 (유사도: 0.85)\n[case_id] 이슈: ..."
+
+# 유사 사례 목록 직접 조회 — (score, example) 튜플 반환
+scored = injector.get_relevant(snap, issues, top_k=3)
+# [(0.85, DiagnosticExample(...)), ...]
+```
 
 ### Confidence Propagation
 

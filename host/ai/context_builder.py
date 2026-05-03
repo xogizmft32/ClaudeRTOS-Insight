@@ -123,7 +123,7 @@ def build_diagnostic_hints(snap: Dict, issues: List[Dict],
             direction = "상승" if cpu_t.slope_per_s > 0 else "하강"
             hints.append(
                 f"📈 CPU {direction} 추세: {cpu_t.slope_per_s:+.1f}%/s "
-                f"(현재 {snap.get('cpu_usage')}% → "
+                f"(현재 {snap.get('cpu_usage', 0)}% → "
                 f"60초 후 예상 {min(100, snap.get('cpu_usage',0)+cpu_t.slope_per_s*60):.0f}%)")
         if heap_t and heap_t.slope_per_s < -10:
             hints.append(

@@ -136,14 +136,14 @@ def _run_debug(args):
         from analysis.debug_report     import DebugReportGenerator
         from analysis.alert_manager    import AlertManager
         from ai.rtos_debugger          import RTOSDebuggerV3
-        from ai.response_parser        import ResponseParser
+        from ai.response_parser        import AIResponseParser
 
         # 세션 초기화
         init_session_analyzers()
         engine   = AnalysisEngine()
         logger   = SessionLogger(log_dir=args.log_dir)
         reporter = DebugReportGenerator(project_name="ClaudeRTOS", profile=args.profile)
-        parser   = ResponseParser()
+        parser   = AIResponseParser()
         alert    = AlertManager(min_severity='Critical')
 
         logger.start()

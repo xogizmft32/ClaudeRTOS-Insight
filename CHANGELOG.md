@@ -2185,3 +2185,133 @@ injector.record(snap, issues, diagnosis=result.final_diagnosis,
 ```
 
 ### Validation: 21/21 + 20/20 PASS
+## [5.2.1] — 2026-05-03
+
+### 변경 유형
+`fix` 버그 수정 + `refactor` 코드 품질 + `docs` 문서 동기화
+
+### 요약
+v5.2.0 전수 검토에서 발견된 런타임 버그 3건·로직 오류 4건·코드 품질 2건·
+문서-코드 불일치 5건·테스트 누락 2건을 일괄 수정했다.
+
+### 버그 수정 (🔴 런타임)
+
+| ID | 파일 | 내용 |
+|----|------|------|
+| B-01 | `host/claudertos_main.py` | `ResponseParser` → `AIResponseParser` (ImportError 수정) |
+| B-02 | `host/ai/rtos_debugger.py` | `from patterns.session_learner` → `from ..patterns.session_learner` (상대 import 통일) |
+| B-03 | `host/ai/rtos_debugger.py` | `AITier` 중복 import 제거 (L37·L51 → L37만 유지) |
+
+### 로직 수정 (🟠)
+
+| ID | 파일 | 내용 |
+|----|------|------|
+| L-01 | `host/ai/context_builder.py` | `snap.get('cpu_usage')` → `snap.get('cpu_usage', 0)` — `None%` 출력 방지 |
+| L-02 | `host/ai/agent_loop.py` | JSON 파싱을 `re.search(r'\{.*\}', re.DOTALL)` → `JSONDecoder.raw_decode()` 로 변경 (중첩 JSON 안전 처리) |
+| L-03 | `host/ai/agent_loop.py` | max_turns 소진 시 `final_diagnosis` 강제 요청 후 추가 API 호출 한 번 더 수행 |
+| L-04 | `host/ai/few_shot_injector.py` | `get_relevant()` 반환 타입을 `List[DiagnosticExample]` → `List[Tuple[float, DiagnosticExample]]` 로 변경; `inject_to_context()`가 실제 유사도 점수("유사도: 0.85")를 출력하도록 수정 |
+
+### 코드 품질 (🟡)
+
+| ID | 파일 | 내용 |
+|----|------|------|
+| Q-01 | `host/ai/few_shot_injector.py` | `import logging` + `_log = ...`를 파일 맨 아래에서 상단(L24 블록)으로 이동; 파일 말미 중복 정의 제거 |
+| Q-02 | `host/parsers/binary_parser.py` | `_PERIPHERAL_EVENT_TYPES` 딕셔너리를 shebang·docstring·imports 이전 위치에서 constants 블록 직후로 이동 |
+
+### 문서 수정 (🔵)
+
+| ID | 파일 | 내용 |
+|----|------|------|
+| D-01 | `docs/DOCUMENT_INDEX.md` | 문서 수 "31개" → "38개" 수정 |
+| D-02 | `docs/DOCUMENT_INDEX.md` | CHANGELOG 버전 참조 "v4.9.0" → "v5.2.1" 수정 |
+| D-03 | `docs/DOCUMENT_INDEX.md` | 누락 6개 문서 등재: `AI_PIPELINE_GUIDE`, `PIPELINE_FLOW`, `CLAUDE_AGENT_GUIDE`, `CODEX_CLI_GUIDE`, `GEMINI_CLI_GUIDE`, `TEST_RESULT_REPORT` |
+| D-04 | `docs/SYSTEM_REVIEW.md` | `FewShotInjector.add_example()` → v5.2.0 신규 API(`record()`, `get_relevant()`, `inject_to_context()`) 문서화; 구·신 모듈 구분 명시 |
+| D-05 | `README.md` + `docs/SYSTEM_REVIEW.md` | 파이프라인 다이어그램에 v5.2.0 신규 컴포넌트 [17]`context_builder` [18]`agent_loop` [19]`few_shot_injector(AI)` 추가 |
+
+### 테스트 추가 (⚪)
+
+| 파일 | 내용 |
+|------|------|
+| `host/tests/test_v520_modules.py` (신규) | v5.2.0 3개 모듈 단위 테스트 19개 추가 — context_builder(8), agent_loop(6), few_shot_injector(7) |
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| 전체 Python 파일 문법 | PASS (오류 0) |
+| 신규 테스트 19개 | 작성 완료 |
+| 20/20 Protocol | 유지 (하위 호환 변경만 포함) |
+
+---
+
+## [5.3.0] — 2026-05-03
+
+### 변경 유형
+`feat` 기능 추가 (하위 호환)
+
+### 요약
+20/20 Protocol을 **30/30 Protocol**로 확장.
+그룹별 독립 실행(--group P/A/C), 명시적 ID 체계, 타이밍 측정을 도입하고
+신규 모듈(v5.2.0) 및 분석 엔진 전체를 커버하는 검증 항목 16개를 추가.
+패치 적용 스크립트(`apply_patch_v521.py`) 추가.
+
+### 신규 기능
+
+#### 30/30 Protocol (`examples/integrated_demo.py`)
+- `run_validation(groups=None)` — 그룹 선택 실행 지원
+- `--group P/A/C` CLI 인자 추가
+- 각 체크 명시적 ID (P-01~10 / A-01~10 / C-01~10)
+- 체크별 실행 시간 측정 (0.5ms 초과 시 출력)
+- 그룹별 결과 요약 테이블
+
+#### GROUP P — Protocol/Parser (10개, P-01~P-10)
+| ID | 내용 |
+|----|------|
+| P-01~P-05 | 기존 5개 시나리오 (구조화) |
+| P-06 | heap_exhaustion 시나리오 |
+| P-07 | cpu_overload 시나리오 |
+| P-08 | stack_overflow_imminent (hwm ≤ 8W) |
+| P-09 | 정상 스냅샷 FPR=0 (오탐 없음 검증) |
+| P-10 | 16-태스크 최대 부하 파싱 |
+
+#### GROUP A — AI 모듈 (10개, A-01~A-10)
+| ID | 내용 |
+|----|------|
+| A-01~A-05 | 기존 AI 모드 검증 (구조화) |
+| A-06 | HallucinationGuard — 올바른 주장 → verified |
+| A-07 | HallucinationGuard — 허위 주장 → mismatch |
+| A-08 | TrendAnalyzer — CPU 슬로프 정확도 ±0.5%/s |
+| A-09 | AnomalyScorer — CPU 스파이크 z-score ≥ 3.0 |
+| A-10 | FewShotInjector — 유사도 점수 포함 출력 |
+
+#### GROUP C — 분석/파이프라인 (10개, C-01~C-10)
+| ID | 내용 |
+|----|------|
+| C-01~C-04 | 기존 전송 계층 검증 (구조화) |
+| C-05 | CorrelationEngine — CORR-006 Heap 감소 추세 |
+| C-06 | TrendAnalyzer — Heap 고갈 예측 anomaly=True |
+| C-07 | DebugReportGenerator — Markdown 파일 생성 |
+| C-08 | context_builder — build_enhanced_context() |
+| C-09 | agent_loop — DiagnosticAgent 도구 6개 등록 |
+| C-10 | End-to-End 파이프라인 (파싱→분석→보고서) |
+
+#### 패치 적용 스크립트 (`apply_patch_v521.py`)
+- `--verify`   : 패치 필요 여부 사전 확인 (변경 없음)
+- `--apply`    : 패치 적용 (백업 자동 생성)
+- `--apply --yes` : 무확인 적용 (CI/자동화용)
+- `--status`   : 현재 적용 상태 출력
+- `--rollback` : 백업으로 복원
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| 30/30 Protocol | ✅ 30/30 PASS (76ms) |
+| --group P | ✅ 10/10 PASS |
+| --group A | ✅ 10/10 PASS |
+| --group C | ✅ 10/10 PASS |
+| --group A C | ✅ 20/20 PASS |
+| Python 문법 | ✅ 62개 파일 오류 없음 |
+
+---
+
