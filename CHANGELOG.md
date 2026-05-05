@@ -2315,3 +2315,60 @@ v5.2.0 전수 검토에서 발견된 런타임 버그 3건·로직 오류 4건·
 
 ---
 
+## [5.4.0] — 2026-05-04
+
+### 변경 유형
+`refactor` 코드·문서 정리 (하위 호환)
+
+### 요약
+전체 코드와 문서를 전수 검토해 미사용 파일 삭제, 중복 통합,
+문서 구조 재분류를 수행했다. 기능 변경 없음.
+
+### 코드 정리
+
+| 조치 | 파일 | 근거 |
+|------|------|------|
+| 삭제 | `host/analysis/few_shot_injector.py` | `host/ai/few_shot_injector.py`(v5.2.0)로 완전 대체 |
+| 삭제 | `host/analysis/analysis_context.py` | 외부 import 사용처 0건 — 실험적 설계 미통합 |
+| 삭제 | `host/local_analyzer/local_llm.py` | `providers/ollama.py`로 완전 대체 |
+| 이동 | `host/local_analyzer/` → `host/utils/` | 독립 유틸리티 성격 명시, 패키지명 정리 |
+| 수정 | `host/analysis/debugger_context.py` | 구버전 few_shot import → 신버전 ai/ 경로로 교체 |
+
+### 문서 통합 (35개 → 25개)
+
+| 삭제·통합된 파일 | 통합 대상 |
+|----------------|----------|
+| `AI_USAGE_GUIDE_ko.md` | → `03_ai/AI_USAGE_GUIDE.md` |
+| `PATTERN_GUIDE_ko.md` | → `05_quality/PATTERN_GUIDE.md` |
+| `QUICKSTART_COMPLETE_ko.md` | → `01_start/QUICKSTART_COMPLETE.md` |
+| `TRACE_GUIDE_ko.md` | → `02_firmware/TRACE_GUIDE.md` |
+| `SAFETY_DESIGN_GUIDELINES.md` | → `05_quality/SAFETY_AUDIT_SUMMARY.md` |
+| `BUGFIX_REPORT.md` | 삭제 (CHANGELOG에 내용 이미 포함) |
+
+### 문서 구조 재분류
+
+```
+docs/ (flat 35개) → 6개 카테고리 서브디렉터리 25개
+  01_start/       시작하기 (3개)
+  02_firmware/    펌웨어 설정 (5개)
+  03_ai/          AI 분석 (7개)
+  04_architecture/ 아키텍처 참조 (5개)
+  05_quality/     품질·안전성 (4개)
+  06_testing/     테스트·검증 (4개)
+```
+
+### 갱신 항목
+- `github-update.sh` REQUIRED_FILES — 새 경로 반영
+- `README.md` — 모든 docs 링크 새 경로 반영, v5.4.0 갱신
+- `docs/DOCUMENT_INDEX.md` — 새 구조 전면 재작성
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Python 문법 | ✅ 60개 파일 오류 없음 |
+| 30/30 Protocol | ✅ 30/30 PASS |
+| docs 링크 유효성 | ✅ 전체 갱신 |
+
+---
+

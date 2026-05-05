@@ -24,8 +24,8 @@ import json
 import time
 from typing import Optional, List, Dict, Any
 try:
-    from .few_shot_injector import FewShotInjector as _FSI
-    _few_shot: _FSI = _FSI(log_dir='logs', max_examples=2)
+    from ..ai.few_shot_injector import FewShotInjector as _FSI  # v5.2.0 신버전
+    _few_shot: _FSI = _FSI()
 except Exception:
     _few_shot = None
 
@@ -214,12 +214,13 @@ def build_context(
             groups    = group_issues_by_root_cause(issue_list)
             ctx       = enrich_context_with_analysis(
                             ctx, trend_r, anomaly_r, groups)
-            # Few-shot: 유사 과거 사례 주입
+            # Few-shot: 유사 과거 사례 주입 (v5.2.0 ai/few_shot_injector)
             if _few_shot is not None and issue_list:
                 try:
-                    fs = _few_shot.to_context(issue_list)
-                    if fs:
-                        ctx.setdefault('analysis', {})['few_shot_examples'] = fs
+                    snap_for_fs = ctx.get('snapshot', {})
+                    fs_text = _few_shot.inject_to_context(snap_for_fs, issue_list, top_k=2)
+                    if fs_text:
+                        ctx.setdefault('analysis', {})['few_shot_examples'] = fs_text
                 except Exception:
                     pass
         except Exception:

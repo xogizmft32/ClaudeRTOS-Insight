@@ -21,8 +21,8 @@ v5.2.0 → v5.2.1 패치 적용 스크립트.
   [L-04] host/ai/few_shot_injector.py — get_relevant() 튜플 반환 + 유사도 점수 출력
   [Q-01] host/ai/few_shot_injector.py — logging 상단 이동, 중복 정의 제거
   [Q-02] host/parsers/binary_parser.py — _PERIPHERAL_EVENT_TYPES 위치 정상화
-  [D-01] docs/DOCUMENT_INDEX.md       — 문서 수 31→38, 버전 v4.9.0→v5.2.1
-  [D-02] docs/DOCUMENT_INDEX.md       — 누락 6개 문서 등재
+  [D-01] docs/DOCUMENT_INDEX.md       — 문서 수·경로·버전 최신화
+  [D-02] docs/DOCUMENT_INDEX.md       — 새 서브디렉터리 구조 반영
   [D-03] docs/SYSTEM_REVIEW.md        — FewShotInjector 구/신 API 문서화 + [17][18][19]
   [D-04] README.md                    — 파이프라인 다이어그램 [17][18][19] 추가
   [T-01] host/tests/test_v520_modules.py — v5.2.0 신규 모듈 테스트 19개 (신규 파일)
@@ -308,7 +308,8 @@ def _apply_Q02(src: str) -> str:
 
 
 def _need_D01_readme(src: str) -> bool:
-    return "version-5.2.0" in src or "v2.3 → v5.2.0" in src or \
+    return "version-5.2.0" in src or "version-5.3.0" in src or \
+           "v2.3 → v5.2.0" in src or "v2.3 → v5.3.0" in src or \
            "v4.9.4)" in src or "[1]~[18]" in src
 
 def _apply_D01_readme(src: str) -> str:
