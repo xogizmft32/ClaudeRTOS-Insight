@@ -2406,5 +2406,9 @@ docs/ (flat 35개) → 6개 카테고리 서브디렉터리 25개
 | Python 문법 | ✅ 60개 파일 오류 없음 |
 | 30/30 Protocol | ✅ 30/30 PASS |
 
+### 추가 정리 (v5.4.1 포함)
+- `firmware/modules/os_monitor/DEPRECATED_os_monitor*.{c,h}` 4개 삭제 (외부 참조 0건)
+- `github_cleanup.sh` 신규 추가 — GitHub 저장소 일괄 정리 스크립트
+
 ---
 
