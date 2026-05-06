@@ -12,3 +12,10 @@ build/
 *.egg-info/
 .DS_Store
 github-update.sh
+
+# ClaudeRTOS-Insight — auto-added by github_cleanup.sh
+*.pkl
+.patch_backup/
+logs/
+Thumbs.db
+*.tar.gz
