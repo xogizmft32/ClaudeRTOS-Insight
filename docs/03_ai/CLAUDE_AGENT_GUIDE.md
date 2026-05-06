@@ -1,10 +1,14 @@
 # Claude Agent SDK Provider — 설정 가이드
+# Claude Agent SDK Provider — Configuration Guide
+
+> Use Claude Agent SDK for multi-turn agentic analysis. The agent iteratively calls tools, reasons about results, and produces a final diagnosis — more powerful than a single-shot API call.
 
 Claude Code CLI 기반 에이전트 루프 분석 Provider.
 
 ---
 
 ## 단순 API vs Agent SDK
+*Single-Shot API vs Agent SDK — When to Use Which*
 
 | 항목 | `anthropic` (기존) | `claude_agent` (신규) |
 |------|------|------|
@@ -17,6 +21,7 @@ Claude Code CLI 기반 에이전트 루프 분석 Provider.
 ---
 
 ## 설치
+*Installation*
 
 ```bash
 pip install claude-agent-sdk>=0.1.56
@@ -27,6 +32,7 @@ pip install claude-agent-sdk>=0.1.56
 ---
 
 ## 설정
+*Configuration*
 
 ```bash
 export CLAUDERTOS_AI_PROVIDER=claude_agent
@@ -44,6 +50,7 @@ export CLAUDE_AGENT_MODEL=claude-opus-4-6
 ---
 
 ## 코드 사용
+*Code Usage*
 
 ```python
 from ai.providers.claude_agent_provider import ClaudeAgentProvider
@@ -64,6 +71,7 @@ if provider.is_available():
 ---
 
 ## 주의사항
+*Caveats and Limitations*
 
 - `max_turns`가 높을수록 비용 증가 → 임베디드 분석은 3~5회로 충분
 - Claude Agent SDK가 설치되지 않으면 `is_available()` → `False` 반환

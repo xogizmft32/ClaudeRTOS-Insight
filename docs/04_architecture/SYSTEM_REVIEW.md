@@ -6,6 +6,7 @@
 ---
 
 ## 용어 정의
+*Terminology Definitions*
 
 | 용어 | 의미 |
 |------|------|
@@ -17,6 +18,7 @@
 ---
 
 ## 전체 파이프라인
+*Full Analysis Pipeline — All 21 Components*
 
 ```
 STM32 Firmware (Cortex-M4 @ 180MHz)
@@ -121,6 +123,7 @@ Host (N100 PC)
 ---
 
 ## 우선순위 처리 흐름
+*Priority Processing Flow — How Issues Are Queued and Escalated*
 
 severity 기반 이슈 → EventPriorityQueue → AI 라우팅:
 
@@ -172,6 +175,7 @@ causal_graph (DAG, GlobalCausalGraph):
 ---
 
 ## ISR 추적 모델
+*ISR Tracing Model — DWT EXCCNT Based*
 
 ```
 현재 구현:
@@ -214,6 +218,7 @@ AI 컨텍스트 전달:
 ---
 
 ## 검증 결과
+*Validation Results — 30/30 Protocol*
 
 ```
 전 과정 시뮬레이션 (19/19 PASS):
@@ -233,6 +238,7 @@ AI 컨텍스트 전달:
 ---
 
 ## 알려진 제약 및 로드맵
+*Known Constraints and Roadmap*
 
 | 항목 | 현재 | 개선 방향 |
 |------|------|---------|
@@ -263,6 +269,7 @@ q = EventPriorityQueue(on_critical=alert.on_critical)
 ```
 
 ### OS 격리 (`firmware/port/insight_port_os.h`)
+*OS Isolation Layer — Abstracts FreeRTOS API Calls*
 FreeRTOS API를 os_monitor에서 격리. RTOS 교체 시 이 파일만 수정.
 
 ```
@@ -274,6 +281,7 @@ firmware/port/freertos/insight_port_os.c     ← FreeRTOS 구현
 제공 함수: `InsightOS_GetTaskList()`, `InsightOS_GetHeapInfo()`, `InsightOS_GetCpuPercent()` 등
 
 ### ISR 타임라인 분리 (`time_normalizer.split_timelines()`)
+*ISR Timeline Separation — Splits Task Events from ISR Events*
 
 ```python
 split = tn.split_timelines(events)
@@ -283,6 +291,7 @@ split = tn.split_timelines(events)
 ```
 
 ### Mermaid 그래프 출력 (`causal_graph.to_mermaid()`)
+*Mermaid Diagram Export — Renders Causal Graph as Flowchart*
 
 ```python
 md = gcg.to_mermaid(max_nodes=15)
@@ -295,6 +304,7 @@ with open("causal_graph.mermaid", "w") as f:
 Ollama 모델별 특성, 클라우드 대비 한계, 운영 전략 포함.
 
 ### Session Learner 자동 통합 (`RTOSDebuggerV3.save_session()`)
+*Session Learner Auto-Integration — Learns from Each Debug Session*
 
 ```python
 # 세션 종료 시 1회 호출
@@ -335,6 +345,7 @@ gpio_monitor.h           ← GPIO 글리치/상태 감지 (1순위)
 이벤트 타입 예약: 0x70(GPIO), 0x80(I2C), 0x90(SPI), 0xA0(UART)
 
 ### 빌드 모드 + 프로파일 (`firmware/core/trace_config.h`)
+*Build Modes and Profiles — Select Overhead/Feature Tradeoff*
 ```makefile
 make RELEASE=1              # Zero footprint
 make DEBUG=1 PROFILE=LITE   # 저사양 (28B RAM, offline AI)
@@ -343,12 +354,14 @@ make DEBUG=1 PROFILE=EXPERT # 고사양 (8KB, realtime AI)
 ```
 
 ### 관련 문서
+*Related Documentation*
 - `docs/TRANSPORT_GUIDE.md`: ITM vs UART 비교·설정·한계
 - `docs/OFFLINE_GUIDE.md`: 폐쇄망 운용·wheel 반입·Docker
 
 ---
 
 ## ~v4.9 추가 컴포넌트
+*Components Added Through v4.9*
 
 ### TrendAnalyzer + AnomalyScorer (`host/analysis/trend_analyzer.py`)
 
@@ -453,6 +466,7 @@ scored = injector.get_relevant(snap, issues, top_k=3)
 - Causal Graph 없이 동작하는 경량 버전
 
 ### DebugReport + SessionLogger 연동 (`host/analysis/debug_report.py`)
+*DebugReport + SessionLogger Integration — Generates Markdown Reports*
 
 ```python
 gen = DebugReportGenerator(project_name="MyProject", cpu_hz=180_000_000)

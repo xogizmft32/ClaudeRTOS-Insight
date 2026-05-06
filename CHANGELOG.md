@@ -2372,3 +2372,39 @@ docs/ (flat 35개) → 6개 카테고리 서브디렉터리 25개
 
 ---
 
+## [5.4.1] — 2026-05-05
+
+### 변경 유형
+`docs` 문서 보강 (코드 변경 없음)
+
+### 요약
+전체 28개 문서를 전수 검토해 한국어로만 작성된 섹션 헤더에
+영문 부제 또는 이탤릭 설명을 추가했다. 기존 내용은 변경 없음.
+
+### 대상 문서 (13개 파일, 약 220개 섹션 보강)
+
+| 카테고리 | 파일 |
+|----------|------|
+| 01_start | `GETTING_STARTED.md`, `QUICKSTART_COMPLETE.md`, `QUICK_TROUBLESHOOTING.md` |
+| 02_firmware | `TRACE_GUIDE.md`, `FREERTOS_HOOK_GUIDE.md`, `TRANSPORT_GUIDE.md`, `ITM_TROUBLESHOOTING.md`, `HEISENBUG_GUIDE.md` |
+| 03_ai | `AI_USAGE_GUIDE.md`, `AI_PIPELINE_GUIDE.md`, `LOCAL_AI_GUIDE.md`, `OFFLINE_GUIDE.md`, `CLAUDE_AGENT_GUIDE.md`, `GEMINI_CLI_GUIDE.md`, `CODEX_CLI_GUIDE.md` |
+| 04_architecture | `PIPELINE_FLOW.md`, `SYSTEM_REVIEW.md` |
+| 06_testing | `TESTING_CHECKLIST.md`, `TEST_ENVIRONMENT.md`, `TEST_RESULT_REPORT.md` |
+
+### 추가 방식
+
+- `## 한국어 제목` 바로 아래 `*English Description*` 이탤릭 한 줄
+- 단계 제목처럼 간결한 경우 `## 한국어 / English` 슬래시 병기
+- 문서 상단에 EN 개요 blockquote (`> ...`) 추가
+- 기존 영문이 이미 충분한 섹션(FAULT_INJECTION, MISRA, WCET 등)은 유지
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| 문서 전수 스캔 (KO전용 헤더 비율) | ✅ 28개 전부 50% 이상 EN 설명 보유 |
+| Python 문법 | ✅ 60개 파일 오류 없음 |
+| 30/30 Protocol | ✅ 30/30 PASS |
+
+---
+

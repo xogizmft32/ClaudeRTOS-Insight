@@ -1,4 +1,7 @@
 # Gemini CLI 연동 가이드 — ClaudeRTOS-Insight
+# Gemini CLI Integration Guide
+
+> Use Google Gemini CLI as a free AI provider for ClaudeRTOS-Insight. Personal Google accounts get free quota via OAuth; API key mode suits server deployments.
 
 Gemini CLI headless 모드를 사용한 AI 분석 Provider 설정 안내.
 
@@ -18,6 +21,7 @@ Gemini CLI headless 모드를 사용한 AI 분석 Provider 설정 안내.
 ---
 
 ## Gemini CLI란?
+*What Is Gemini CLI?*
 
 Gemini CLI는 Google이 공식 오픈소스로 공개한 터미널 AI 에이전트로, Gemini 모델을 터미널에서 직접 사용할 수 있게 해줍니다. Google Search 기반 정보 검색, 파일 조작, 셸 명령 실행, MCP(Model Context Protocol) 지원을 내장하고 있습니다.
 
@@ -28,8 +32,9 @@ ClaudeRTOS-Insight는 이 CLI의 **headless 모드**(`--output-format json`)를 
 ---
 
 ## 설치
+*Installation*
 
-### 요구사항
+### 요구사항 / Requirements
 
 | 항목 | 최소 | 권장 |
 |------|------|------|
@@ -37,7 +42,7 @@ ClaudeRTOS-Insight는 이 CLI의 **headless 모드**(`--output-format json`)를 
 | Gemini CLI | 0.37.x | 최신 stable |
 | OS | Linux / macOS / Windows | Linux |
 
-### Node.js 설치 (없는 경우)
+### Node.js 설치 (없는 경우) / Node.js Installation (if missing)
 
 ```bash
 # Ubuntu/Debian
@@ -51,7 +56,7 @@ brew install node
 node --version   # v20.x.x 이상
 ```
 
-### Gemini CLI 설치
+### Gemini CLI 설치 / Gemini CLI Installation
 
 ```bash
 # 방법 1: 전역 설치 (권장)
@@ -70,10 +75,11 @@ gemini --version
 ---
 
 ## 인증 설정
+*Authentication Setup — Three Methods*
 
 세 가지 방법 중 하나를 선택합니다. **개인 사용자는 방법 1(OAuth) 권장**입니다.
 
-### 방법 1: Google OAuth (무료, 개인 권장)
+### 방법 1: Google OAuth (무료, 개인 권장) / Method 1: Google OAuth (Free, Personal)
 
 ```bash
 # 대화형 로그인 (브라우저 열림)
@@ -86,7 +92,7 @@ gemini -p "Hello" --output-format json
 
 무료 한도: **60 요청/분, 1,000 요청/일**
 
-### 방법 2: Gemini API Key (유료, 서버 배포 권장)
+### 방법 2: Gemini API Key (유료, 서버 배포 권장) / Method 2: Gemini API Key (Paid, Server)
 
 ```bash
 # 1. Google AI Studio에서 API Key 발급
@@ -102,7 +108,7 @@ export GOOGLE_API_KEY=AIzaSy...
 gemini -p "Hello" --output-format json
 ```
 
-### 방법 3: Google Cloud Vertex AI (기업 환경)
+### 방법 3: Google Cloud Vertex AI (기업 환경) / Method 3: Vertex AI (Enterprise)
 
 ```bash
 # Google Cloud 서비스 계정 인증
@@ -120,8 +126,9 @@ gemini -p "Hello" --output-format json
 ---
 
 ## ClaudeRTOS에 연결
+*Connecting to ClaudeRTOS-Insight*
 
-### 기본 설정
+### 기본 설정 / Basic Configuration
 
 ```bash
 # 1. Provider 선택
@@ -135,7 +142,7 @@ export GOOGLE_API_KEY=AIzaSy...  # 방법 2: API Key
 python3 examples/integrated_demo.py --port jlink
 ```
 
-### 고급 환경 변수
+### 고급 환경 변수 / Advanced Environment Variables
 
 ```bash
 # 모델 선택 (기본값 아래 참조)
@@ -149,7 +156,7 @@ export GEMINI_CLI_TIMEOUT=180
 export GEMINI_CLI_PATH=/usr/local/bin/gemini
 ```
 
-### Python 코드에서 직접 사용
+### Python 코드에서 직접 사용 / Direct Use in Python Code
 
 ```python
 from ai.providers.gemini_cli_provider import GeminiCLIProvider
@@ -173,7 +180,7 @@ else:
     print("Gemini CLI를 찾을 수 없습니다. 설치 확인 필요.")
 ```
 
-### RTOSDebuggerV3와 함께 사용
+### RTOSDebuggerV3와 함께 사용 / Use with RTOSDebuggerV3
 
 ```python
 from ai.rtos_debugger import RTOSDebuggerV3
@@ -193,8 +200,9 @@ print(result['_verification']['summary']['trust_score'])
 ---
 
 ## 모델 선택
+*Model Selection*
 
-### 사용 가능한 모델 (2026-04 기준)
+### 사용 가능한 모델 (2026-04 기준) / Available Models
 
 | 모델 | 용도 | 특징 | 비용(API Key) |
 |------|------|------|------------|
@@ -204,7 +212,7 @@ print(result['_verification']['summary']['trust_score'])
 
 > **OAuth(무료 티어) 사용 시**: 비용 없음. 한도 내에서 모든 모델 사용 가능.
 
-### 모델 변경
+### 모델 변경 / Changing Models
 
 ```bash
 # Tier1(고품질) 모델 변경
@@ -217,6 +225,7 @@ export GEMINI_CLI_MODEL_TIER2=gemini-2.0-flash
 ---
 
 ## 비용 및 한도
+*Cost and Rate Limits*
 
 ### OAuth 무료 티어 (Google 계정 로그인)
 
@@ -244,6 +253,7 @@ cost = provider.estimate_cost(
 ---
 
 ## 문제 해결
+*Troubleshooting*
 
 ### gemini: command not found
 
@@ -327,6 +337,7 @@ RUN apt-get update && apt-get install -y curl && \
 ---
 
 ## Provider 비교
+*Provider Comparison — Gemini vs Claude vs Local*
 
 | 항목 | `anthropic` | `claude_agent` | `gemini_cli` | `ollama` |
 |------|-------------|----------------|--------------|---------|
@@ -351,6 +362,7 @@ RUN apt-get update && apt-get install -y curl && \
 ---
 
 ## 관련 문서
+*Related Documentation*
 
 | 문서 | 내용 |
 |------|------|

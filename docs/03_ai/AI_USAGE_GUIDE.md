@@ -1,4 +1,7 @@
-# AI 분석 활용 가이드 (한국어) — ClaudeRTOS-Insight
+# AI 분석 활용 가이드 — ClaudeRTOS-Insight
+# AI Analysis Usage Guide
+
+> Practical guide for getting the most out of AI analysis — what it can and cannot do, cost management, and caching strategies.
 
 > 영문 버전: `docs/AI_USAGE_GUIDE.md`  
 > AI 보조 설계(AI-Assisted Design) 방법론으로 개발된 프로젝트입니다.
@@ -6,6 +9,7 @@
 ---
 
 ## AI가 하는 일 / 하지 않는 일
+*What AI Does and Does Not Do*
 
 ```
 AI가 하는 일:
@@ -23,6 +27,7 @@ AI가 하지 않는 일:
 ---
 
 ## 전체 흐름
+*End-to-End Analysis Flow*
 
 ```
 [로컬 분석, <1ms]
@@ -46,6 +51,7 @@ AI가 하지 않는 일:
 ---
 
 ## AI 모드
+*AI Trigger Modes — When AI Analysis is Invoked*
 
 | 모드 | 동작 | 권장 상황 |
 |------|------|---------|
@@ -61,6 +67,7 @@ engine = AnalysisEngine(ai_mode='postmortem', consecutive_threshold=3)
 ---
 
 ## 우선순위 처리 (EventPriorityQueue)
+*Priority Queue — How Issues Are Ranked Before AI Analysis*
 
 severity → EventPriority → AI 호출 시점:
 
@@ -89,6 +96,7 @@ Rate Limiting:
 ---
 
 ## AI 응답 캐시 (response_cache.py)
+*AI Response Cache — Semantic LRU Cache to Avoid Duplicate API Calls*
 
 ### Semantic Bucket 동작
 
@@ -128,6 +136,7 @@ TTL 정책:
 ---
 
 ## TokenOptimizer (token_optimizer.py)
+*Token Optimizer — Context Compression to Reduce API Cost*
 
 AI에 보내는 컨텍스트를 budget 내로 압축합니다:
 
@@ -154,6 +163,7 @@ budget=500 → Critical + 전체 타임라인
 ---
 
 ## Provider 선택과 비용
+*Provider Selection and Cost Estimation*
 
 ```bash
 export CLAUDERTOS_AI_PROVIDER=anthropic  # ~$0.0085/이슈 (Critical)
@@ -175,6 +185,7 @@ export CLAUDERTOS_AI_PROVIDER=ollama     # $0 (로컬)
 ---
 
 ## 비용 절감 전략
+*Cost Reduction Strategies*
 
 1. **PatternDB 먼저**: KP 매칭 시 AI 호출 없음 ($0)
 2. **postmortem 모드**: 3회 연속 후 1회만 AI 호출

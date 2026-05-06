@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-5.4.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.4.1-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-30%2F30%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -18,7 +18,7 @@ CAD(Computer-Aided Design)처럼 AI가 설계 도구로 활용되며, 도메인 
 ```
 사람  → 도메인 지식, 아키텍처 설계, 검토·검증, 요구사항 정의
 AI    → 코드 생성, 문서화, 리팩토링, 시뮬레이션 검증
-결과  → v2.3 → v5.4.0, 135개 파일, 30/30 검증 통과
+결과  → v2.3 → v5.4.1, 135개 파일, 30/30 검증 통과
 ```
 
 ---
@@ -87,7 +87,7 @@ python3 examples/integrated_demo.py --validate --group P  # Parser 10개만
 python3 examples/integrated_demo.py --validate --group A  # AI 모듈 10개만
 python3 examples/integrated_demo.py --validate --group C  # 분석 10개만
 
-# 패치 적용 (v5.2.0 → v5.4.0)
+# 패치 적용 (v5.2.0 → v5.4.1)
 python3 apply_patch_v521.py --status               # 적용 상태 확인
 python3 apply_patch_v521.py --verify               # 패치 필요 여부 확인
 python3 apply_patch_v521.py --apply                # 대화형 적용
@@ -345,7 +345,7 @@ docker-compose.yml  멀티컨테이너 (host + ollama + replay)
 
 | 문서 | 내용 |
 |------|------|
-| [CHANGELOG.md](CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.4.0) |
+| [CHANGELOG.md](CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.4.1) |
 | [BUGFIX_REPORT.md](CHANGELOG.md) | 주요 버그 수정 기록 |
 
 ---

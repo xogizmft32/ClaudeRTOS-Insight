@@ -1,10 +1,13 @@
 # OpenAI Codex CLI 연동 가이드 — ClaudeRTOS-Insight
+# OpenAI Codex CLI Integration Guide
+
+> Use OpenAI Codex CLI as an AI provider for ClaudeRTOS-Insight. Supports API key authentication and ChatGPT subscription (OAuth) for cost savings.
 
 Codex CLI headless 모드를 사용한 AI 분석 Provider 설정 안내.
 
 ---
 
-## 목차
+## 목차 / Table of Contents
 
 1. [Codex CLI란?](#codex-cli란)
 2. [설치](#설치)
@@ -18,6 +21,8 @@ Codex CLI headless 모드를 사용한 AI 분석 Provider 설정 안내.
 ---
 
 ## Codex CLI란?
+*What Is Codex CLI?*
+*What Is Codex CLI?*
 
 Codex CLI는 OpenAI가 공식 오픈소스(Rust)로 공개한 터미널 코딩 에이전트입니다. GPT-5 계열 코딩 특화 모델을 사용하며, 파일 편집·명령 실행·웹 검색·MCP 통합을 지원합니다.
 
@@ -38,8 +43,10 @@ codex exec "FreeRTOS 스택 오버플로 분석" \
 ---
 
 ## 설치
+*Installation*
+*Installation*
 
-### 요구사항
+### 요구사항 / Requirements
 
 | 항목 | 최소 | 권장 |
 |------|------|------|
@@ -49,7 +56,7 @@ codex exec "FreeRTOS 스택 오버플로 분석" \
 
 > Windows는 WSL2 환경에서 사용을 권장합니다.
 
-### Node.js 설치 (없는 경우)
+### Node.js 설치 (없는 경우) / Node.js Installation (if missing)
 
 ```bash
 # Ubuntu/Debian
@@ -58,7 +65,7 @@ sudo apt-get install -y nodejs
 node --version   # v20.x.x 이상 확인
 ```
 
-### Codex CLI 설치
+### Codex CLI 설치 / Codex CLI Installation
 
 ```bash
 # 전역 설치 (권장)
@@ -76,6 +83,8 @@ npx @openai/codex --version
 ---
 
 ## 인증 설정
+*Authentication Setup*
+*Authentication Setup — Three Methods*
 
 세 가지 방법 중 하나를 선택합니다.
 
@@ -103,7 +112,7 @@ codex exec "Hello" --full-auto --skip-git-repo-check --ephemeral
 
 ChatGPT Plus/Pro/Business/Edu/Enterprise 구독자는 **추가 비용 없이** 사용 가능.
 
-### 방법 3: npx (설치 없이 일시 사용)
+### 방법 3: npx (설치 없이 일시 사용) / Method 3: npx (No Install)
 
 ```bash
 export CODEX_API_KEY=sk-...
@@ -113,8 +122,10 @@ npx @openai/codex exec "Hello" --full-auto --skip-git-repo-check --ephemeral
 ---
 
 ## ClaudeRTOS에 연결
+*Connecting to ClaudeRTOS-Insight*
+*Connecting to ClaudeRTOS-Insight*
 
-### 기본 설정
+### 기본 설정 / Basic Configuration
 
 ```bash
 # 1. Provider 선택
@@ -128,7 +139,7 @@ export CODEX_API_KEY=sk-...
 python3 examples/integrated_demo.py --port jlink
 ```
 
-### 고급 환경 변수
+### 고급 환경 변수 / Advanced Environment Variables
 
 ```bash
 # 모델 선택 (기본값 아래 참조)
@@ -142,7 +153,7 @@ export CODEX_CLI_TIMEOUT=180
 export CODEX_CLI_PATH=/usr/local/bin/codex
 ```
 
-### Python 코드에서 직접 사용
+### Python 코드에서 직접 사용 / Direct Use in Python Code
 
 ```python
 from ai.providers.codex_cli_provider import CodexCLIProvider
@@ -170,8 +181,10 @@ else:
 ---
 
 ## 모델 선택
+*Model Selection*
+*Model Selection*
 
-### 사용 가능한 모델 (2026-04 기준)
+### 사용 가능한 모델 (2026-04 기준) / Available Models
 
 | 모델 | 용도 | 특징 |
 |------|------|------|
@@ -189,8 +202,9 @@ codex exec "분석" --model gpt-5.3-codex --full-auto --skip-git-repo-check
 ---
 
 ## 비용 및 한도
+*Cost and Rate Limits*
 
-### ChatGPT 구독 (OAuth 로그인)
+### ChatGPT 구독 (OAuth 로그인) / ChatGPT Subscription (OAuth)
 
 | 구독 | 비용 | Codex CLI |
 |------|------|---------|
@@ -198,7 +212,7 @@ codex exec "분석" --model gpt-5.3-codex --full-auto --skip-git-repo-check
 | ChatGPT Pro | 월 $200 | **포함** |
 | Business/Edu/Enterprise | 별도 | **포함** |
 
-### OpenAI API Key (종량제)
+### OpenAI API Key (종량제) / OpenAI API Key (Pay-per-use)
 
 ```python
 # 비용 추정 (gpt-5.3-codex 기준)
@@ -216,6 +230,7 @@ cost = provider.estimate_cost(
 ---
 
 ## 문제 해결
+*Troubleshooting*
 
 ### codex: command not found
 
@@ -240,6 +255,7 @@ export CODEX_CLI_PATH=npx
 ```
 
 ### 인증 오류: "No credentials found"
+*Authentication Error: No Credentials Found*
 
 ```bash
 # 방법 1: API Key 설정 확인
@@ -256,6 +272,7 @@ codex login
 ```
 
 ### Git 저장소 오류: "Not inside a git repository"
+*Git Repository Error — Run from Your Project Root*
 
 ```bash
 # --skip-git-repo-check 플래그 자동 적용됨 (Provider 내부 처리)
@@ -263,7 +280,7 @@ codex login
 codex exec "분석" --full-auto --skip-git-repo-check --ephemeral
 ```
 
-### 타임아웃 오류
+### 타임아웃 오류 / Timeout Error
 
 ```bash
 # 타임아웃 늘리기 (기본 120초)
@@ -288,7 +305,7 @@ npm install -g @openai/codex
 # Windows 파일은 /mnt/c/ 경로로 접근
 ```
 
-### Docker 환경
+### Docker 환경 / Docker Environment
 
 ```dockerfile
 # Dockerfile에 Node.js + Codex CLI 추가
@@ -308,6 +325,7 @@ RUN apt-get update && apt-get install -y curl && \
 ---
 
 ## 전체 Provider 비교
+*Full Provider Comparison — Codex vs Claude vs Gemini vs Local*
 
 | 항목 | `anthropic` | `claude_agent` | `gemini_cli` | `codex_cli` | `ollama` |
 |------|-------------|----------------|--------------|-------------|---------|
@@ -319,7 +337,7 @@ RUN apt-get update && apt-get install -y curl && \
 | 코딩 특화 | 보통 | 보통 | 보통 | ✅ (코딩 특화) | 모델 의존 |
 | 안정성 | 높음 | 높음 | CLI 버전 의존 | CLI 버전 의존 | 중간 |
 
-### 선택 기준
+### 선택 기준 / Selection Criteria
 
 ```
 목적별 권장:
@@ -334,6 +352,7 @@ RUN apt-get update && apt-get install -y curl && \
 ---
 
 ## 관련 문서
+*Related Documentation*
 
 | 문서 | 내용 |
 |------|------|

@@ -1,8 +1,12 @@
 # Transport 모드 가이드 — ClaudeRTOS-Insight
+# Transport Mode Guide
+
+> Choose between ITM/SWO (low overhead, requires J-Link) and UART (universal, any MCU). Both carry the same Binary Protocol V4 payload.
 
 ---
 
 ## ITM (Instrumentation Trace Macrocell) 모드
+*ITM Mode — Preferred for Cortex-M with J-Link or OpenOCD*
 
 | 항목 | 내용 |
 |------|------|
@@ -31,6 +35,7 @@ python3 examples/integrated_demo.py --port jlink
 ---
 
 ## UART 모드
+*UART Mode — Universal Fallback for Any MCU*
 
 | 항목 | 내용 |
 |------|------|
@@ -55,6 +60,7 @@ python3 install.py --project /path --transport uart
 ---
 
 ## 모드 비교
+*Mode Comparison Table*
 
 | 항목 | ITM | UART |
 |------|-----|------|
@@ -65,6 +71,7 @@ python3 install.py --project /path --transport uart
 | 필드 배포 | 어려움 | 용이 |
 
 ## 모드 전환
+*Switching Modes at Runtime or Build Time*
 
 런타임 전환 **미지원**. 컴파일 타임에 고정됩니다.
 
@@ -74,6 +81,7 @@ make clean && make TRANSPORT=UART  && make flash  # UART
 ```
 
 ## 권장 환경
+*Recommended Environment for Each Mode*
 
 | 환경 | 권장 |
 |------|------|

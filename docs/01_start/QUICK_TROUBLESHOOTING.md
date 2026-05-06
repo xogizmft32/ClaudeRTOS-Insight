@@ -1,15 +1,20 @@
 # Quick Troubleshooting — ClaudeRTOS-Insight
 
+> 자주 발생하는 문제 모음 — 전체 문서를 읽기 전에 여기서 먼저 확인하세요.
+
+
 ---
 
-## 1. 링커 오류: `undefined reference to EventClassifier_ClassifyV3`
+## 1. 링커 오류 / Linker Error: `undefined reference to EventClassifier_ClassifyV3`
+*Linker error — source file not added to build*
 
 **원인:** 구 버전 `event_classifier.c` 사용.  
 **해결:** .0의 `event_classifier.c`를 `claudertos/` 폴더에 복사하거나 `python3 install.py --project .` 재실행.
 
 ---
 
-## 2. CPU% 항상 0%
+## 2. CPU% 항상 0% / CPU% Always Zero
+*CPU% always shows 0% — DWT or traceTASK_SWITCHED_OUT not configured*
 
 **원인:** `configGENERATE_RUN_TIME_STATS` 비활성.  
 **해결:** `FreeRTOSConfig.h`에 추가:
@@ -23,7 +28,8 @@
 
 ---
 
-## 3. ITM/SWO 데이터 수신 없음
+## 3. ITM/SWO 데이터 수신 없음 / No ITM/SWO Data Received
+*No ITM/SWO data received — clock or pin configuration issue*
 
 **확인 순서:**
 ```
@@ -35,7 +41,8 @@
 
 ---
 
-## 4. AI 분석이 시작되지 않음
+## 4. AI 분석이 시작되지 않음 / AI Analysis Not Triggering
+*AI analysis not triggering — check ai_mode and consecutive_threshold*
 
 **확인:**
 ```bash
@@ -47,7 +54,8 @@ python3 integrated_demo.py --validate  # [AI_READY] 태그 확인
 
 ---
 
-## 5. heap_total = 0 / heap% 계산 불가
+## 5. heap_total = 0 / Heap Total Shows Zero / heap% 계산 불가
+*heap_total = 0 — configTOTAL_HEAP_SIZE not linked correctly*
 
 **원인:** `OSMonitorV3_Init()`이 `vTaskStartScheduler()` 이후에 호출됨.  
 **해결:** 스케줄러 시작 **전에** 호출:
@@ -58,7 +66,8 @@ vTaskStartScheduler();   // ← 이후는 heap 할당 발생
 
 ---
 
-## 6. trace_events 데이터가 타임라인에 없음
+## 6. trace_events 데이터가 타임라인에 없음 / Peripheral Events Missing from Timeline
+*Peripheral events missing from timeline — TRACE_ENABLE_PERIPHERAL not set*
 
 **확인:**
 ```c

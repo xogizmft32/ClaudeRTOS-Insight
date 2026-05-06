@@ -1,8 +1,13 @@
 # ITM/SWO 문제 해결 가이드
+# ITM/SWO Troubleshooting Guide
+
+> Step-by-step diagnosis when SWO data is not received. Follow the numbered steps in order before trying alternatives.
 
 ## 문제: SWO 데이터 수신 안됨
+*Problem: No SWO Data Received*
 
 ### 1단계: ITM 초기화 확인
+*Step 1: Verify ITM Initialization*
 
 ```c
 // main.c에 추가
@@ -35,6 +40,7 @@ int main(void) {
 ```
 
 ### 2단계: SWO 속도 계산 확인
+*Step 2: Verify SWO Baud Rate Calculation*
 
 ```c
 // ITM_Init()에서
@@ -61,6 +67,7 @@ void ITM_Init(void) {
 ```
 
 ### 3단계: J-Link 설정 확인
+*Step 3: Verify J-Link Configuration*
 
 ```bash
 # JLinkSWOViewerCL 실행 시 속도 일치시키기
@@ -71,6 +78,7 @@ JLinkSWOViewerCL -device STM32F446RE -swofreq 1125000 -itmport 0
 ```
 
 ### 4단계: 하드웨어 연결 확인
+*Step 4: Verify Hardware Connections*
 
 ```
 J-Link SWD 연결:
@@ -86,6 +94,7 @@ J-Link SWD 연결:
 ```
 
 ### 5단계: 테스트 코드
+*Step 5: Use Minimal Test Code to Isolate the Problem*
 
 ```c
 // 간단한 테스트
@@ -106,6 +115,7 @@ while (1) {
 ```
 
 ### 6단계: OpenOCD 사용 (대안)
+*Step 6: Try OpenOCD as an Alternative Probe*
 
 ```bash
 # OpenOCD로 SWO 수신
@@ -118,6 +128,7 @@ nc localhost 8888
 ```
 
 ### 문제별 해결
+*Issue-Specific Solutions*
 
 #### "No data" 표시
 - ITM_Init() 호출 확인
@@ -134,6 +145,7 @@ nc localhost 8888
 - MonitorTask 주기 증가 (1000ms → 2000ms)
 
 ### 최종 체크리스트
+*Final Checklist Before Escalating*
 
 - [ ] ITM_Init() 호출됨
 - [ ] SystemCoreClock = 180MHz

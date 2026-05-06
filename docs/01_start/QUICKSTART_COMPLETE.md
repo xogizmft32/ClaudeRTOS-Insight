@@ -1,4 +1,7 @@
-# ClaudeRTOS-Insight — 빠른 시작 가이드 (한국어)
+# ClaudeRTOS-Insight — 빠른 시작 가이드
+# Complete Quickstart Guide
+
+> Full step-by-step guide from unboxing to your first AI debug session. Covers Docker, venv, offline networks, and replay.
 
 > 영문 버전: `docs/QUICKSTART_COMPLETE.md`  
 > AI 보조 설계(AI-Assisted Design) 방법론으로 개발된 프로젝트입니다.
@@ -6,6 +9,7 @@
 ---
 
 ## 사전 요구사항
+*Prerequisites*
 
 ### Python 환경 (재현성 향상)
 
@@ -54,6 +58,7 @@ RAM:    2GB 이상 (N100 권장)
 ---
 
 ## Step 0: 네트워크 없는 환경(폐쇄망) 준비 (선택)
+*Step 0: Air-Gapped / Offline Network Preparation (Optional)*
 
 > 네트워크가 연결된 환경이라면 이 단계를 건너뜁니다.
 
@@ -75,6 +80,7 @@ pip install --no-index --find-links=./offline_pkgs/ \
 > ```
 
 ## Step 1: 압축 해제 및 설치
+*Step 1: Extract and Install*
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-vX.X.X-FINAL.tar.gz
@@ -104,6 +110,7 @@ python3 install.py --check /path/to/my_stm32_project
 ---
 
 ## Step 2: main.c에 추가 (3줄)
+*Step 2: Add 3 Lines to main.c*
 
 ```c
 #include "os_monitor_v3.h"
@@ -138,6 +145,7 @@ int main(void) {
 ---
 
 ## Step 3: 빌드 및 플래시
+*Step 3: Build and Flash*
 
 ```bash
 cd firmware/examples/demo/
@@ -156,6 +164,7 @@ ClaudeRTOS-Insight Started [ITM]
 ---
 
 ## Step 4: 호스트 연결
+*Step 4: Connect Host Collector*
 
 ```bash
 # 먼저 검증 (하드웨어 불필요)
@@ -175,6 +184,7 @@ python3 examples/integrated_demo.py --port jlink --ai-mode offline
 ---
 
 ## Step 5: AI Provider 선택
+*Step 5: Choose Your AI Provider*
 
 ```bash
 # 환경 변수로 AI 백엔드 선택 (코드 변경 없음)
@@ -195,6 +205,7 @@ python3 examples/integrated_demo.py --port jlink
 ---
 
 ## Step 6: 세션 녹화 및 재생 (Deterministic Replay)
+*Step 6: Record and Replay Sessions (Deterministic Replay)*
 
 ```python
 # 녹화 (수신 루프에서)
@@ -219,6 +230,7 @@ print(f"총 {result.critical_count}개 Critical, 데드락 {result.deadlocks}회
 ---
 
 ## Step 7: 결과 해석
+*Step 7: Interpreting the Results*
 
 ### 분석 파이프라인 우선순위 처리
 
@@ -269,6 +281,7 @@ print(f"총 {result.critical_count}개 Critical, 데드락 {result.deadlocks}회
 ---
 
 ## 자주 묻는 질문
+*FAQ*
 
 **Q: Python 버전이 중요한가요?**  
 A: 3.11 이상 권장합니다. `.python-version` 파일에 명세되어 있습니다. Docker를 사용하면 버전 문제 없이 동작합니다.

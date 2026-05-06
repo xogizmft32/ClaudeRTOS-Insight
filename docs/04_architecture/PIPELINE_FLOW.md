@@ -1,10 +1,14 @@
 # 데이터 파이프라인 흐름 — ClaudeRTOS-Insight
+# Data Pipeline Flow
+
+> End-to-end data flow: firmware trace → collector → parser → analysis → AI. Each component's input/output contract is defined here.
 
 펌웨어에서 AI 분석 결과까지의 전체 데이터 흐름을 설명합니다.
 
 ---
 
 ## 전체 흐름 개요
+*End-to-End Flow Overview*
 
 ```
 [STM32 타겟]
@@ -72,6 +76,7 @@
 ---
 
 ## 컴포넌트별 입출력 명세
+*Input/Output Contract per Component*
 
 ### [1] Collector
 
@@ -127,6 +132,7 @@
 ---
 
 ## 오류 전파 규칙
+*Error Propagation Rules — How Failures Are Handled at Each Stage*
 
 ```
 Collector 오류    → stream() 예외 처리 → 재연결 또는 중단 (파이프라인 외부)
@@ -142,6 +148,7 @@ SessionLogger     → warnings.warn() (저장 실패 무시)
 ---
 
 ## 관련 문서
+*Related Documentation*
 
 | 문서 | 내용 |
 |------|------|

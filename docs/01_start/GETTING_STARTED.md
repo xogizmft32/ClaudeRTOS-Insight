@@ -1,8 +1,12 @@
 # 10분 도입 가이드 — ClaudeRTOS-Insight
+# 10-Minute Integration Guide
+
+> Get ClaudeRTOS-Insight running on your STM32 in 10 minutes. Section A covers Nucleo-F446RE directly; Section B covers other MCUs.
 
 ---
 
 ## 무엇을 먼저 확인하나요?
+*Where to Start — Choose Your Hardware Section*
 
 ```
 내 MCU가 STM32 Nucleo-F446RE 인가?
@@ -19,10 +23,11 @@
 ---
 
 ## Section A — STM32 Nucleo-F446RE (동일 하드웨어, 10분)
+*Section A — Same Hardware: Start Here for Fastest Setup*
 
 **준비물**: Nucleo-F446RE, J-Link 또는 ST-Link, Python 3.11+
 
-### Step 1: 설치 (2분)
+### Step 1: 설치 (2분) / Installation (2 min)
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-vX.X.X-FINAL.tar.gz
@@ -35,7 +40,7 @@ pip install -r host/requirements.txt
 python3 install.py --project /path/to/my_project
 ```
 
-### Step 2: main.c에 3줄 추가 (1분)
+### Step 2: main.c에 3줄 추가 (1분) / Add 3 Lines to main.c (1 min)
 
 ```c
 #include "trace_events.h"
@@ -53,7 +58,7 @@ int main(void) {
 }
 ```
 
-### Step 3: 빌드 및 플래시 (2분)
+### Step 3: 빌드 및 플래시 (2분) / Build and Flash (2 min)
 
 ```bash
 cd firmware/examples/demo/
@@ -65,7 +70,7 @@ make -j4 && make flash
 ClaudeRTOS-Insight Started [ITM]
 ```
 
-### Step 4: AI 키 설정 (1분)
+### Step 4: AI 키 설정 (1분) / Set API Key (1 min)
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...    # Claude 사용 시
@@ -73,7 +78,7 @@ export ANTHROPIC_API_KEY=sk-ant-...    # Claude 사용 시
 # 오프라인: --ai-mode offline (AI 없이 로컬만)
 ```
 
-### Step 5: 호스트 연결 (1분)
+### Step 5: 호스트 연결 (1분) / Connect Host (1 min)
 
 ```bash
 python3 examples/integrated_demo.py --port jlink
@@ -122,7 +127,7 @@ DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 - ITM(SWO) **미지원** → UART 필수
 - DWT CYCCNT **없음** → SysTick 기반 타임스탬프 사용
 
-### UART 모드 설정
+### UART 모드 설정 / UART Mode Configuration
 
 ```bash
 # 설치 시 UART 지정
@@ -150,7 +155,7 @@ uint32_t port_timestamp_us(void) {
 }
 ```
 
-### 호스트 연결
+### 호스트 연결 / Host Connection
 
 ```bash
 python3 examples/integrated_demo.py --port uart:/dev/ttyUSB0
@@ -169,6 +174,7 @@ python3 examples/integrated_demo.py --port uart:/dev/ttyUSB0
 ---
 
 ## Section B-3 — 비-ARM (ESP32, RP2040 등)
+*Section B-3 — Non-ARM MCUs: Requires Custom Port*
 
 ### ESP32 (FreeRTOS + Xtensa)
 
@@ -198,6 +204,7 @@ void app_main(void) {
 - UART 포트: `uart_driver_install()` 후 `Transport_Init()` 호출
 
 ### RP2040 (새 포팅 필요)
+*RP2040 — New Port Required*
 
 RP2040은 Cortex-M0+ 기반. 아직 공식 포트 없음.
 `firmware/port/cortex_m0/` 폴더를 생성하고 `port.h` 인터페이스를 구현합니다.
@@ -216,6 +223,7 @@ uint32_t port_timestamp_us(void) {
 ---
 
 ## 자주 발생하는 문제
+*Common Issues — Quick Fixes*
 
 | 증상 | 원인 | 해결 |
 |------|------|------|
@@ -230,6 +238,7 @@ uint32_t port_timestamp_us(void) {
 ---
 
 ## 다음 단계
+*Next Steps After Initial Setup*
 
 | 목적 | 문서 |
 |------|------|
@@ -243,11 +252,12 @@ uint32_t port_timestamp_us(void) {
 ---
 
 ## 직렬 포트(UART) 접근 권한 설정
+*UART Serial Port Permission Setup*
 
 Docker 컨테이너 또는 Linux 호스트에서 `/dev/ttyUSB0`에 접근하려면
 추가 권한이 필요합니다.
 
-### 호스트 직접 실행
+### 호스트 직접 실행 / Run Host Directly
 
 ```bash
 # dialout 그룹 추가 (재로그인 필요)
@@ -258,7 +268,7 @@ newgrp dialout
 sudo chmod 666 /dev/ttyUSB0
 ```
 
-### Docker 컨테이너
+### Docker 컨테이너 / Inside Docker Container
 
 ```bash
 # docker-compose.yml의 devices 항목이 있으면 자동 매핑
@@ -271,7 +281,7 @@ addgroup --system dialout 2>/dev/null || true
 usermod -aG dialout $(whoami)
 ```
 
-### udev 규칙 (영구 설정)
+### udev 규칙 (영구 설정) / Permanent udev Rule
 
 ```bash
 # STM32 Nucleo 전용 udev 규칙

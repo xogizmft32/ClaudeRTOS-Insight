@@ -1,10 +1,14 @@
 # Test Environment — ClaudeRTOS-Insight
 
+> Reproducible test environment specification. Pin your host environment with Docker for consistent results across machines.
+
 ---
 
 ## 개발·테스트 환경
+*Development and Test Environment Specification*
 
 ### 호스트
+*Host Machine Requirements*
 
 | 항목 | 권장 | 최소 |
 |------|------|------|
@@ -14,6 +18,7 @@
 | Python | 3.11+ (`.python-version` 참조) | 3.9+ |
 
 ### Docker (환경 고정 권장)
+*Docker — Recommended for Reproducibility*
 
 ```bash
 docker-compose build
@@ -23,6 +28,7 @@ docker-compose run --rm claudertos --validate
 `Dockerfile`: python:3.11-slim 기반, `requirements.txt` 버전 고정.
 
 ### 펌웨어 타깃
+*Firmware Target Hardware*
 
 | 항목 | 값 |
 |------|-----|
@@ -34,6 +40,7 @@ docker-compose run --rm claudertos --validate
 | STM32Cube FW | F4 (버전 무관) |
 
 ### 디버거
+*Debug Probe*
 
 | 도구 | 용도 |
 |------|------|
@@ -44,6 +51,7 @@ docker-compose run --rm claudertos --validate
 ---
 
 ## 테스트 시나리오
+*Test Scenarios — Validated Reproducible Cases*
 
 ### 1. 프로토콜 자동 검증
 
@@ -138,6 +146,7 @@ python3 tests/fault_injection_tester.py /dev/ttyUSB0
 ---
 
 ## Semantic Cache 검증
+*Semantic Cache Validation — Verify Correct Cache Hits and Misses*
 
 ```python
 from ai.response_cache import AIResponseCache, SemanticKeyBuilder
@@ -168,6 +177,7 @@ print("Semantic Cache: ✅")
 ---
 
 ## 재현성 확인 체크리스트
+*Reproducibility Verification Checklist*
 
 ```bash
 # 1. Python 버전

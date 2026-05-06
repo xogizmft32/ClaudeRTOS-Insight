@@ -1,4 +1,7 @@
 # AI 분석 파이프라인 설정 가이드
+# AI Analysis Pipeline Configuration Guide
+
+> Configure the 7-stage AI analysis pipeline. Each stage can be tuned independently or use built-in presets.
 
 ClaudeRTOS-Insight v5.1.0부터 AI 분석 로직이 7단계 파이프라인으로 다단화됐다.
 각 단계를 독립적으로 설정하거나 프리셋을 사용할 수 있다.
@@ -6,6 +9,7 @@ ClaudeRTOS-Insight v5.1.0부터 AI 분석 로직이 7단계 파이프라인으�
 ---
 
 ## 파이프라인 구조
+*Pipeline Architecture — 7 Sequential Stages*
 
 ```
 입력: snap + issues + timeline_events
@@ -29,6 +33,7 @@ ClaudeRTOS-Insight v5.1.0부터 AI 분석 로직이 7단계 파이프라인으�
 ---
 
 ## 빠른 시작
+*Quick Start — Use a Preset*
 
 ```python
 from ai.rtos_debugger  import RTOSDebuggerV3
@@ -48,6 +53,7 @@ print(result['_pipeline_meta']['total_ms'])         # 분석 소요 시간
 ---
 
 ## 프리셋
+*Built-in Presets*
 
 | 프리셋 | 용도 | 트리아지 | 모델 | 타임아웃 | 검증 |
 |--------|------|----------|------|----------|------|
@@ -68,6 +74,7 @@ PipelineConfig.from_env()   # 환경 변수 동적 설정
 ---
 
 ## 환경 변수
+*Environment Variable Overrides*
 
 ```bash
 # 프리셋 선택
@@ -85,6 +92,7 @@ export CLAUDERTOS_CACHE_TTL=3600
 ---
 
 ## 단계별 설정 직접 구성
+*Manual Per-Stage Configuration*
 
 ```python
 from ai.pipeline_config import (
@@ -153,6 +161,7 @@ debugger.use_pipeline(cfg)
 ---
 
 ## 결과 구조
+*Pipeline Result Structure*
 
 ```python
 result = debugger.debug_snapshot(snap, issues)
@@ -177,6 +186,7 @@ meta['stages']          # List — 단계별 실행 결과
 ---
 
 ## 단계별 건너뛰기 / 비활성화
+*Skipping or Disabling Stages*
 
 ```python
 # 트리아지 건너뜀 (항상 Tier1 호출)
@@ -192,6 +202,7 @@ cfg = PipelineConfig(postprocess=PostProcessConfig(cache_enabled=False))
 ---
 
 ## 관련 파일
+*Related Files*
 
 | 파일 | 역할 |
 |------|------|

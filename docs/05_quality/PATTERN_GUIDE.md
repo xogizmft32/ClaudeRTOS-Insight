@@ -1,4 +1,7 @@
-# 패턴 가이드 (한국어) — ClaudeRTOS-Insight
+# 패턴 가이드 — ClaudeRTOS-Insight
+# Pattern Database Guide
+
+> Add, modify, or learn custom detection patterns. Patterns are JSON-based rules that run before the AI, at zero cost.
 
 > 영문 버전: `docs/PATTERN_GUIDE.md`
 
@@ -8,6 +11,7 @@
 ---
 
 ## 파일 구조
+*File Structure — Where Pattern Files Live*
 
 ```
 host/patterns/
@@ -20,6 +24,7 @@ host/patterns/
 ---
 
 ## 커스텀 패턴 추가
+*Adding Custom Patterns — Three Methods*
 
 ### 방법 1: JSON 파일 작성 (가장 간단)
 
@@ -99,6 +104,7 @@ learner.save_to_db(auto_save=True)        # 세션 종료 시 저장
 ---
 
 ## match 조건 빠른 참조
+*Match Condition Quick Reference*
 
 | 조건 | 의미 | 예시 |
 |------|------|------|
@@ -110,6 +116,7 @@ learner.save_to_db(auto_save=True)        # 세션 종료 시 저장
 | `issue_detail` | 수치 조건 | `{"stack_hwm_words": {"lt": 20}}` |
 
 ## causal_chain_template 변수
+*Template Variables for causal_chain_template*
 
 `{변수명}` 형식. 자동으로 실제 값으로 치환됩니다.
 
@@ -126,6 +133,7 @@ learner.save_to_db(auto_save=True)        # 세션 종료 시 저장
 ---
 
 ## 패턴 비활성화
+*Disabling a Pattern Without Deleting It*
 
 ```json
 // custom_patterns.json에 추가
@@ -137,6 +145,7 @@ learner.save_to_db(auto_save=True)        # 세션 종료 시 저장
 ---
 
 ## 패턴 테스트
+*Testing a Pattern Before Deployment*
 
 ```python
 from patterns.pattern_db import reload_db

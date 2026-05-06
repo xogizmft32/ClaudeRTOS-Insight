@@ -1,10 +1,14 @@
 # 로컬 AI (Ollama) 활용 가이드 — ClaudeRTOS-Insight
+# Local AI (Ollama) Guide
+
+> Run AI analysis locally with zero cost and no network required. Ollama hosts open-source LLMs on your PC.
 
 네트워크 없이 또는 비용 $0으로 AI 분석을 사용하는 방법.
 
 ---
 
 ## 로컬 AI의 실제 능력과 한계
+*Realistic Capabilities and Limitations of Local AI*
 
 > 이 수치는 N100 PC 기준 **추정치**입니다.
 > 실제 성능은 모델 버전, 시스템 RAM, 동시 프로세스 수에 따라 달라집니다.
@@ -36,6 +40,7 @@
 ---
 
 ## 설치 및 설정
+*Installation and Configuration*
 
 ```bash
 # Ollama 설치 (Linux)
@@ -56,6 +61,7 @@ python3 examples/integrated_demo.py --port jlink
 ---
 
 ## 운영 전략
+*Operational Strategy — Which Model for Which Issue Severity*
 
 | 상황 | 권장 설정 |
 |------|---------|
@@ -68,6 +74,7 @@ python3 examples/integrated_demo.py --port jlink
 ---
 
 ## 완전 오프라인 분석 범위
+*What Can Be Analyzed Fully Offline (No API Key Required)*
 
 네트워크 없이 `ai_mode=offline`으로 가능한 것:
 
@@ -94,6 +101,7 @@ python3 examples/integrated_demo.py --port jlink
 ---
 
 ## Docker에서 Ollama 사용
+*Running Ollama Inside Docker*
 
 ```bash
 # Ollama 컨테이너 시작
