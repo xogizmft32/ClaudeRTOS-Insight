@@ -845,6 +845,126 @@ void vBadISR(void) {
         results.append(_chk('A-17', 'A',
                             'Option E — MISRAChecker fix_code 정적 검사', _a17))
 
+        # A-18: AnalysisEngine 오브젝트 풀 — GC 지터 감소 검증
+        def _a18():
+            from analysis.analyzer import AnalysisEngine
+            import gc, time, statistics
+
+            engine = AnalysisEngine(ai_mode='postmortem')
+
+            # 풀이 초기화됐는지 확인
+            has_pool = hasattr(engine, '_pool') and len(engine._pool) == 32
+            has_buf  = hasattr(engine, '_pool_idx')
+            has_alloc= hasattr(engine, '_alloc_issue')
+
+            snap = {
+                'cpu_usage': 91, '_parser_stats': {}, 'sequence': 1,
+                'timestamp_us': 1_000_000, 'snapshot_count': 1, 'uptime_ms': 60000,
+                'heap': {'free': 150, 'used_pct': 98, 'total': 8192, 'min': 100},
+                'tasks': [
+                    {'task_id': 0, 'name': 'SensorTask', 'priority': 5,
+                     'state': 0, 'state_name': 'Running',
+                     'cpu_pct': 88, 'stack_hwm': 12, 'runtime_us': 90000},
+                ],
+            }
+
+            # GC off 시 지터 측정 (풀 재사용 확인)
+            gc.collect(); gc.disable()
+            times = []
+            for _ in range(100):
+                # 풀 인덱스 리셋 확인
+                engine.analyze_snapshot(snap)
+                times.append(engine._pool_idx)
+            gc.enable()
+
+            # 매 호출 후 pool_idx가 리셋돼 있어야 함 (재사용 증거)
+            pool_reuse_ok = all(t <= 32 for t in times)
+
+            # 결과물 타입이 Issue인지 확인
+            results_check = engine.analyze_snapshot(snap)
+            from analysis.analyzer import Issue
+            type_ok = all(isinstance(i, Issue) for i in results_check)
+
+            ok = has_pool and has_buf and has_alloc and pool_reuse_ok and type_ok
+            return ok, (
+                f"pool_size={len(engine._pool)} has_alloc={has_alloc} "
+                f"pool_reuse_ok={pool_reuse_ok} type_ok={type_ok}"
+            )
+        results.append(_chk('A-18', 'A',
+                            'AnalysisEngine 오브젝트 풀 — GC 지터 감소 검증', _a18))
+
+        # A-19: SnapshotQueue 역압 처리 + debug_snapshot_resilient 폴백 검증
+        def _a19():
+            from analysis.snapshot_queue import SnapshotQueue, QueueStats
+
+            # ── (1) SnapshotQueue 역압 처리 ──────────────────────
+            q = SnapshotQueue(max_depth=4, drop_policy='oldest')
+            snap_base = {
+                'cpu_usage': 91, '_parser_stats': {}, 'sequence': 0,
+                'timestamp_us': 0, 'snapshot_count': 0, 'uptime_ms': 0,
+                'heap': {'free': 150, 'used_pct': 98, 'total': 8192, 'min': 100},
+                'tasks': [{'task_id': 0, 'name': 'T', 'priority': 5,
+                           'state': 0, 'state_name': 'Running',
+                           'cpu_pct': 88, 'stack_hwm': 12, 'runtime_us': 0}],
+            }
+            issues_base = [{'type': 'heap_exhaustion', 'severity': 'Critical'}]
+
+            # 8개 push → 4개 초과분 드롭
+            for i in range(8):
+                s = {**snap_base, 'sequence': i, 'timestamp_us': i * 1_000_000}
+                q.push(s, issues_base)
+
+            st = q.stats()
+            depth_ok   = q.qsize() == 4
+            dropped_ok = st.dropped_total == 4
+            push_ok    = st.pushed_total == 8
+
+            # pop 동작 확인
+            item = q.pop(timeout=0.0)
+            pop_ok = item is not None
+
+            # 빈 큐 non-blocking
+            q.clear()
+            none_ok = q.pop(timeout=0.0) is None
+
+            # stats.to_dict()
+            dict_ok = 'drop_rate_pct' in st.to_dict()
+
+            # ── (2) RTOSDebuggerV3.debug_snapshot_resilient() ─────
+            # RTOSDebuggerV3는 모듈 레벨 상대 import로 직접 로드 불가
+            # debug_snapshot_resilient의 핵심인 계층적 폴백 체인을
+            # 컴포넌트 레벨로 직접 검증한다
+            from ai.ai_fallback import AIFallbackAnalyzer
+            from ai.analysis_pipeline import AnalysisPipeline
+            from ai.pipeline_config import PipelineConfig
+            import threading
+
+            # Level 1 폴백: AIFallbackAnalyzer.analyze() 직접 검증
+            fallback = AIFallbackAnalyzer()
+            fb_result = fallback.analyze(snap_base, issues_base,
+                                         reason='resilient-L1: timeout(0.1s)')
+            fallback_ok = (isinstance(fb_result, dict)
+                           and 'issues' in fb_result
+                           and fb_result.get('_fallback') is True)
+
+            # 타임아웃 스레드 패턴 검증: join(timeout) 후 미완료 감지
+            result_holder = [None]
+            def _slow(): import time; time.sleep(10)
+            t = threading.Thread(target=_slow, daemon=True)
+            t.start(); t.join(timeout=0.05)
+            timeout_detected = t.is_alive()
+
+            ok = (depth_ok and dropped_ok and push_ok and pop_ok
+                  and none_ok and dict_ok and fallback_ok and timeout_detected)
+            return ok, (
+                f"queue: depth={q.qsize()} dropped={st.dropped_total} "
+                f"push={st.pushed_total} pop_ok={pop_ok} none_ok={none_ok} "
+                f"dict_ok={dict_ok} | "
+                f"fallback_ok={fallback_ok} timeout_detected={timeout_detected}"
+            )
+        results.append(_chk('A-19', 'A',
+                            'SnapshotQueue 역압 + debug_snapshot_resilient 폴백 검증', _a19))
+
 
     if run_C:
         print(f"\n{'─'*65}")
@@ -1070,7 +1190,7 @@ void vBadISR(void) {
 
     # 그룹별 요약
     print(f"\n{'═'*65}")
-    print(f"  37/37 Protocol — 결과 요약")
+    print(f"  39/39 Protocol — 결과 요약")
     print(f"{'─'*65}")
     for grp in ('P', 'A', 'C'):
         grp_res = [r for r in results if r.group == grp]

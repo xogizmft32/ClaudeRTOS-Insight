@@ -428,6 +428,125 @@ class RTOSDebuggerV3:
             },
         }
 
+    def debug_snapshot_resilient(self,
+                                  snap:            Dict,
+                                  issues:          List[Dict],
+                                  timeout_s:       float          = 5.0,
+                                  trends:          Optional[Dict] = None,
+                                  timeline_events: Optional[List] = None,
+                                  ai_mode:         str            = 'postmortem',
+                                  isr_stats:       Optional[Dict] = None,
+                                  cpu_hz:          int            = 180_000_000) -> Dict:
+        """
+        계층적 폴백 체인 — 네트워크 단절·타임아웃 시 항상 결과 반환.
+
+        실시간 임베디드 환경에서 AI API 응답 보장이 불가능할 때 사용한다.
+
+        폴백 체인 (순서대로 시도)
+        -------------------------
+        1. Pipeline/AI 분석  (timeout_s 이내)
+        2. 실패 → AnalysisEngine Rule-based 즉시 결과  (항상 < 1ms)
+        3. Rule도 실패 → 캐시된 마지막 유사 진단
+        4. 캐시도 없음 → 최소 경보 dict (이슈 목록만)
+
+        Parameters
+        ----------
+        snap            : ParsedSnapshot.to_dict()
+        issues          : AnalysisEngine.analyze_snapshot() 결과 (to_dict() 변환)
+        timeout_s       : AI 분석 타임아웃 (초, 기본 5.0)
+        trends          : TrendAnalyzer 결과 (선택)
+        timeline_events : 타임라인 이벤트 (선택)
+        ai_mode         : 'postmortem' | 'realtime' | 'offline'
+        isr_stats       : ISR 통계 (선택)
+        cpu_hz          : MCU 클럭
+
+        Returns
+        -------
+        AI 응답과 동일한 구조의 dict.
+        '_fallback_level' 키로 실제 사용된 체인 단계 확인 가능:
+          0 = AI 성공, 1 = Rule-based, 2 = 캐시, 3 = 최소 경보
+        """
+        import threading as _th
+        import logging  as _lg
+        _log = _lg.getLogger(__name__)
+
+        # ── Level 0: Pipeline / AI 분석 ──────────────────────────
+        result_holder: List[Optional[Dict]] = [None]
+        exc_holder:    List[Optional[Exception]] = [None]
+
+        def _ai_call():
+            try:
+                result_holder[0] = self.debug_snapshot(
+                    snap=snap, issues=issues,
+                    trends=trends, timeline_events=timeline_events,
+                    ai_mode=ai_mode, isr_stats=isr_stats, cpu_hz=cpu_hz,
+                )
+            except Exception as e:
+                exc_holder[0] = e
+
+        t = _th.Thread(target=_ai_call, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+
+        if result_holder[0] is not None:
+            result_holder[0]['_fallback_level'] = 0
+            return result_holder[0]
+
+        # ── Level 1: Rule-based (AnalysisEngine) ─────────────────
+        timeout_reason = (
+            f"timeout ({timeout_s}s)" if t.is_alive()
+            else f"{type(exc_holder[0]).__name__}: {exc_holder[0]}"
+        )
+        _log.warning("[Resilient] Level 0 실패 (%s) → Rule-based", timeout_reason)
+
+        try:
+            from analysis.analyzer import AnalysisEngine
+            _engine = getattr(self, '_resilient_engine', None)
+            if _engine is None:
+                _engine = AnalysisEngine(ai_mode='offline')
+                self._resilient_engine = _engine
+            rule_result = _engine.analyze_snapshot(snap)
+            fb = self._fallback.analyze(
+                snap,
+                [i.to_dict() for i in rule_result] if rule_result else issues,
+                reason=f"resilient-L1: {timeout_reason}",
+            )
+            fb['_fallback_level'] = 1
+            fb['_fallback_reason'] = timeout_reason
+            return fb
+        except Exception as e1:
+            _log.warning("[Resilient] Level 1 실패 (%s) → 캐시 조회", e1)
+
+        # ── Level 2: 캐시된 마지막 진단 ──────────────────────────
+        try:
+            if issues:
+                cached = self._cache.get(issues[0].get('type', ''),
+                                         issues[0].get('task', 'SYSTEM'))
+                if cached:
+                    _log.info("[Resilient] Level 2: 캐시 히트")
+                    return {
+                        **({'response_dict': cached} if isinstance(cached, dict) else {}),
+                        '_fallback_level': 2,
+                        '_fallback_reason': 'cache_hit',
+                        '_stale': True,
+                    }
+        except Exception as e2:
+            _log.warning("[Resilient] Level 2 실패 (%s) → 최소 경보", e2)
+
+        # ── Level 3: 최소 경보 dict ───────────────────────────────
+        _log.error("[Resilient] Level 3: 최소 경보만 반환")
+        severities = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
+        critical = [i for i in issues
+                    if severities.get(i.get('severity', 'Low'), 3) <= 1]
+        return {
+            'issues':             critical or issues,
+            'session_summary':    f"AI unavailable — {len(issues)} rule-based issue(s) detected",
+            'overall_confidence': 0.0,
+            '_fallback':          True,
+            '_fallback_level':    3,
+            '_fallback_reason':   timeout_reason,
+        }
+
     def debug_batch(self,
                     snap:            Dict,
                     issues:          List[Dict],

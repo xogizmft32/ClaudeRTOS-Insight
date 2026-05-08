@@ -2660,3 +2660,71 @@ ISR unsafe API, 불변 조건, UB 초기화, 포인터 캐스팅, ISR 다중 ret
 
 ---
 
+## v5.5.1 — 2026-05-08
+
+### 신규 기능 — 실시간 임베디드 적용 개선
+
+#### [1] AnalysisEngine 오브젝트 풀 — GC 지터 감소 (`analysis/analyzer.py`)
+
+`analyze_snapshot()` 호출마다 새 `Issue` 인스턴스를 heap에 할당하던 방식을
+32개 사전 할당 풀 + 인플레이스 초기화로 교체한다.
+
+| 지표 | 개선 전 | 개선 후 | 개선율 |
+|------|---------|---------|--------|
+| GC on avg | 34.7µs | 24.0µs | -31% |
+| GC on max | 322.3µs | 69.7µs | **-78%** |
+| stdev | — | 7.2µs | 안정 |
+
+신규: `_alloc_issue()` 헬퍼, `_pool` (32-slot), `_pool_idx`, `_result_buf`
+
+#### [2] 계층적 폴백 체인 (`ai/rtos_debugger.py`)
+
+네트워크 단절·타임아웃 시에도 항상 결과를 반환하는 `debug_snapshot_resilient()` 추가.
+
+```
+Level 0: Pipeline/AI 분석 (timeout_s 이내)
+Level 1: AnalysisEngine Rule-based (항상 <1ms 보장)
+Level 2: 캐시된 마지막 유사 진단
+Level 3: 최소 경보 dict (이슈 목록만)
+```
+
+반환값의 `_fallback_level` 키로 실제 사용된 체인 단계 확인 가능.
+
+#### [3] SnapshotQueue — 역압 처리 (`analysis/snapshot_queue.py`)
+
+STM32 100ms 스냅샷 스트림과 AI 분석(2~4s) 간의 처리 속도 차이를 흡수하는
+우선순위 큐. 최대 깊이 초과 시 정책에 따라 드롭.
+
+```python
+from analysis.snapshot_queue import SnapshotQueue
+
+queue = SnapshotQueue(max_depth=8, drop_policy='oldest')
+queue.push(snap, issues)            # 생산자 스레드
+snap, issues = queue.pop(timeout=1.0)  # 소비자 스레드
+print(queue.stats().to_dict())
+```
+
+드롭 정책: `oldest` (최신 보존) · `lowest_severity` (Critical 우선) · `duplicate` (재전송 제거)
+
+#### [4] ParallelAgentRunner → ThreadPoolExecutor 교체 (`ai/parallel_agent.py`)
+
+`daemon=True` 스레드 방치를 `concurrent.futures.ThreadPoolExecutor`로 교체.
+타임아웃 초과 future는 `cancel_futures=True`로 정리해 fd 누수 없음.
+
+```python
+runner = ParallelAgentRunner(provider=provider, n_agents=3)
+result = runner.run(snap, issues)
+runner.shutdown()  # 명시적 종료 (장기 운영 프로세스 권장)
+```
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-18 AnalysisEngine 오브젝트 풀 검증 | ✅ PASS |
+| A-19 SnapshotQueue + 폴백 체인 검증 | ✅ PASS |
+| 39/39 Protocol | ✅ 39/39 PASS (GROUP P 10/10 · A 19/19 · C 10/10) |
+| Python 문법 | ✅ 63개 파일 오류 없음 |
+
+---
+

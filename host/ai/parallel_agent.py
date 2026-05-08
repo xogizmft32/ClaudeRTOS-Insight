@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import time
 import logging
-import threading
 import dataclasses
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeout
 from typing import Dict, List, Optional, Any, Tuple
 from collections import Counter
 
@@ -105,6 +105,25 @@ class ParallelAgentRunner:
         self._max_turns   = max_turns
         self._timeout_s   = timeout_s
         self._min_success = min_success
+        # ThreadPoolExecutor: daemon=True 의존 없이 스레드 수명 관리
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._n_agents,
+            thread_name_prefix='claudertos_agent',
+        )
+
+    def shutdown(self, wait: bool = False) -> None:
+        """
+        실행기 종료 — 장기 운영 프로세스에서 명시적으로 호출.
+        wait=False: 진행 중인 작업을 취소하고 즉시 반환 (임베디드 호스트 권장).
+        """
+        self._executor.shutdown(wait=wait, cancel_futures=not wait)
+        _log.info("[ParallelAgent] executor shutdown (wait=%s)", wait)
+
+    def __del__(self):
+        try:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
     # ── 공개 API ────────────────────────────────────────────
 
@@ -128,40 +147,45 @@ class ParallelAgentRunner:
         t0 = time.perf_counter()
         _log.info("[ParallelAgent] %d 에이전트 병렬 실행 시작", self._n_agents)
 
-        # ── 병렬 실행 ─────────────────────────────────────
-        agent_results: List[Optional[AgentResult]] = [None] * self._n_agents
-        exceptions:    List[Optional[Exception]]   = [None] * self._n_agents
-        threads: List[threading.Thread] = []
+        # ── ThreadPoolExecutor 기반 병렬 실행 ─────────────
+        # daemon=True 스레드 방치 없이, 타임아웃 초과 future는
+        # cancel_futures로 정리한다. 장기 운영 시 fd 누수 없음.
+        def _run_one(idx: int) -> AgentResult:
+            agent = DiagnosticAgent(
+                provider=self._provider,
+                max_turns=self._max_turns,
+            )
+            result = agent.run(
+                snap=snap, issues=issues,
+                trends=trends, timeline=timeline,
+                pipeline_result=pipeline_result,
+            )
+            _log.info("[ParallelAgent] Agent#%d 완료 turns=%d",
+                      idx, result.turn_count)
+            return result
 
-        def _run_one(idx: int):
-            try:
-                agent = DiagnosticAgent(
-                    provider=self._provider,
-                    max_turns=self._max_turns,
-                )
-                agent_results[idx] = agent.run(
-                    snap=snap, issues=issues,
-                    trends=trends, timeline=timeline,
-                    pipeline_result=pipeline_result,
-                )
-                _log.info("[ParallelAgent] Agent#%d 완료 turns=%d",
-                          idx, agent_results[idx].turn_count)
-            except Exception as e:
-                exceptions[idx] = e
-                _log.warning("[ParallelAgent] Agent#%d 실패: %s", idx, e)
+        futures = {
+            self._executor.submit(_run_one, i): i
+            for i in range(self._n_agents)
+        }
 
-        for i in range(self._n_agents):
-            t = threading.Thread(target=_run_one, args=(i,), daemon=True)
-            threads.append(t)
-            t.start()
-
-        for t in threads:
-            t.join(timeout=self._timeout_s)
+        succeeded: List[AgentResult] = []
+        failed = 0
+        try:
+            for future in as_completed(futures, timeout=self._timeout_s):
+                try:
+                    succeeded.append(future.result())
+                except Exception as e:
+                    failed += 1
+                    _log.warning("[ParallelAgent] Agent#%d 실패: %s",
+                                 futures[future], e)
+        except FutureTimeout:
+            failed += sum(1 for f in futures if not f.done())
+            _log.warning("[ParallelAgent] 타임아웃 — %d개 미완료", failed)
+            for f in futures:
+                f.cancel()
 
         # ── 결과 수집 ─────────────────────────────────────
-        succeeded = [r for r in agent_results if r is not None]
-        failed    = self._n_agents - len(succeeded)
-
         total_ms = int((time.perf_counter() - t0) * 1000)
         _log.info("[ParallelAgent] 완료: 성공=%d 실패=%d %dms",
                   len(succeeded), failed, total_ms)

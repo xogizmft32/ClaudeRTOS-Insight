@@ -2,7 +2,7 @@
 
 **AI 보조 설계(AI-Assisted Design) × FreeRTOS/STM32 실시간 디버깅 시스템**
 
-[![Version](https://img.shields.io/badge/version-5.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.5.1-blue.svg)](CHANGELOG.md)
 [![Validation](https://img.shields.io/badge/validation-32%2F32%20PASS-green.svg)](examples/integrated_demo.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![AI-Assisted Design](https://img.shields.io/badge/built%20with-AI--Assisted%20Design-blue.svg)](#about-ai-assisted-design)
@@ -353,7 +353,7 @@ docker-compose.yml  멀티컨테이너 (host + ollama + replay)
 ## 검증 결과
 
 ```
-Protocol validation:    37/37 PASS  (GROUP P 10/10 · A 17/17 · C 10/10)
+Protocol validation:    39/39 PASS  (GROUP P 10/10 · A 19/19 · C 10/10)
 전 과정 시뮬레이션:      19/19 PASS
 분석 파이프라인:         < 1.08ms/사이클 (N100 기준, 추정치)
 AI context:             ~111 tokens
