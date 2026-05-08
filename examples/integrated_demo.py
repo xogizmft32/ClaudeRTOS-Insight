@@ -452,9 +452,400 @@ def run_validation(groups: list = None) -> bool:
         results.append(_chk('A-10', 'A',
                             'FewShotInjector — 유사도 점수 포함 출력', _a10))
 
-    # ─────────────────────────────────────────────────────────
-    # GROUP C — Analysis / Correlation / Pipeline (C-01 ~ C-10)
-    # ─────────────────────────────────────────────────────────
+        # A-11: S4b RetryConfig — 설정 및 프리셋 검증
+        def _a11():
+            from ai.pipeline_config import PipelineConfig, RetryConfig
+            # default 프리셋: retry enabled
+            cfg_def = PipelineConfig.default()
+            ok_def = cfg_def.retry.enabled is True and cfg_def.retry.max_retries == 2
+            # realtime 프리셋: retry disabled
+            cfg_rt = PipelineConfig.realtime()
+            ok_rt = cfg_rt.retry.enabled is False
+            # deep 프리셋: TIER1 에스컬레이션
+            cfg_dp = PipelineConfig.deep()
+            ok_dp = cfg_dp.retry.tier_on_retry == 'TIER1'
+            # summary에 retry 포함
+            summary = cfg_def.summary()
+            ok_summ = 'retry' in summary
+            ok = ok_def and ok_rt and ok_dp and ok_summ
+            return ok, (
+                f"default.retry.enabled={cfg_def.retry.enabled} "
+                f"realtime.retry.enabled={cfg_rt.retry.enabled} "
+                f"deep.tier_on_retry={cfg_dp.retry.tier_on_retry} "
+                f"summary_has_retry={ok_summ}"
+            )
+        results.append(_chk('A-11', 'A',
+                            'S4b RetryConfig — 프리셋별 설정 검증', _a11))
+
+        # A-12: S4b _build_correction_prompt — Evidence Injection 동작
+        def _a12():
+            from ai.analysis_pipeline import AnalysisPipeline
+            from ai.pipeline_config import PipelineConfig
+            from ai.hallucination_guard import VerificationNote
+
+            pipeline = AnalysisPipeline(provider=None,
+                                        config=PipelineConfig.default())
+            snap = {
+                'cpu_usage': 30, '_parser_stats': {},
+                'heap': {'free': 5000, 'used_pct': 39, 'total': 8192, 'min': 4900},
+                'tasks': [
+                    {'task_id': 0, 'name': 'RealTask', 'priority': 3,
+                     'state': 0, 'state_name': 'Running',
+                     'cpu_pct': 30, 'stack_hwm': 350, 'runtime_us': 0},
+                ],
+            }
+            # 환각 note 시뮬레이션: AI가 GhostTask 언급, hwm=3W라고 주장
+            notes = [
+                VerificationNote(
+                    claim="task 'GhostTask' 존재",
+                    status='mismatch',
+                    actual=['RealTask'],
+                    detail="⚠ 스냅샷에 없음",
+                    severity='warn',
+                ),
+                VerificationNote(
+                    claim="RealTask stack_hwm=3W",
+                    status='mismatch',
+                    actual=350,
+                    detail="⚠ AI주장=3W, 실제=350W",
+                    severity='error',
+                ),
+            ]
+            original = "원본 컨텍스트 내용..."
+            corrected = pipeline._build_correction_prompt(original, notes, snap)
+
+            # 검증: 수정 블록이 원본 앞에 삽입됐는지
+            has_correction = '[수정된 실측값' in corrected
+            has_actual_val = '350' in corrected          # 실제 hwm 포함
+            has_task_list  = 'RealTask' in corrected     # 실제 태스크 목록
+            starts_with_correction = corrected.index('[수정된 실측값') < \
+                                     corrected.index('원본 컨텍스트')
+            ok = has_correction and has_actual_val and has_task_list \
+                 and starts_with_correction
+            return ok, (
+                f"has_correction={has_correction} "
+                f"has_actual_hwm={has_actual_val} "
+                f"has_task_list={has_task_list} "
+                f"correction_before_original={starts_with_correction}"
+            )
+        results.append(_chk('A-12', 'A',
+                            'S4b Evidence Injection — correction_prompt 구성 검증', _a12))
+
+        # A-13: S4b CoT 경로 — min_trust_to_retry 트리거 + 2차 시스템 프롬프트 검증
+        def _a13():
+            from ai.analysis_pipeline import AnalysisPipeline
+            from ai.pipeline_config import PipelineConfig, RetryConfig
+
+            called_prompts = []  # generate() 호출 시 system 인자 기록
+
+            class MockProvider:
+                """재질의 횟수·시스템 프롬프트를 기록하는 Mock."""
+                call_count = 0
+
+                def generate(self, system, context, max_tokens, tier):
+                    called_prompts.append(system)
+                    self.__class__.call_count += 1
+
+                    class R:
+                        text = ('{"severity":"High","root_cause":"cpu_overload",'
+                                '"recommended_actions":["check tasks"],'
+                                '"confidence":0.4}')
+                        model = 'mock'
+                        tokens_in = 10
+                        tokens_out = 20
+                    return R()
+
+            snap = {
+                'cpu_usage': 95, '_parser_stats': {},
+                'heap': {'free': 1000, 'used_pct': 87, 'total': 8192, 'min': 900},
+                'tasks': [
+                    {'task_id': 0, 'name': 'WorkerTask', 'priority': 2,
+                     'state': 0, 'state_name': 'Running',
+                     'cpu_pct': 95, 'stack_hwm': 50, 'runtime_us': 0},
+                ],
+            }
+            issues = [{'type': 'cpu_overload', 'severity': 'Critical',
+                       'message': 'CPU 95%'}]
+
+            # max_retries=2, min_trust_to_retry=0.0 → 항상 양쪽 경로 모두 실행
+            cfg = PipelineConfig.default()
+            cfg.verify.mode = 'strict'
+            cfg.verify.min_trust = 0.99      # 거의 항상 검증 실패
+            cfg.retry.enabled = True
+            cfg.retry.max_retries = 2
+            cfg.retry.min_trust_to_retry = 1.0  # trust < 1.0 이면 재질의 → 항상 발동
+            cfg.retry.tier_on_retry = 'same'
+            cfg.triage.enabled = False
+
+            provider = MockProvider()
+            pipeline = AnalysisPipeline(provider=provider, config=cfg)
+            pipeline.run(snap, issues)
+
+            # S3(본 호출) 1회 + S4b(1차·2차) 최대 2회 = 최대 3회 호출
+            total_calls = MockProvider.call_count
+
+            # 1차 재질의: _SYSTEM_SKEPTIC 포함 여부
+            has_skeptic = any('감사자' in p for p in called_prompts)
+            # 2차 재질의: _SYSTEM_CHAIN_OF_THOUGHT 포함 여부
+            has_cot     = any('1단계' in p for p in called_prompts)
+
+            # min_trust_to_retry 수정 검증:
+            # trust < 1.0 조건이 올바르게 동작 → 재질의 발동 (call_count > 1)
+            trigger_ok  = total_calls > 1
+
+            ok = has_skeptic and has_cot and trigger_ok
+            return ok, (
+                f"total_calls={total_calls} "
+                f"has_skeptic(1차)={has_skeptic} "
+                f"has_cot(2차)={has_cot} "
+                f"trigger_ok={trigger_ok}"
+            )
+        results.append(_chk('A-13', 'A',
+                            'S4b CoT 경로 — min_trust_to_retry 트리거 + 2차 프롬프트 검증', _a13))
+
+        # A-14: postmortem_mode — What/Why/How 3분리 출력 검증
+        def _a14():
+            from ai.analysis_pipeline import AnalysisPipeline, PostmortemDiagnosis
+            from ai.pipeline_config import PipelineConfig
+
+            class MockPostmortemProvider:
+                """What/Why/How가 포함된 JSON을 반환하는 Mock."""
+                def generate(self, system, context, max_tokens, tier):
+                    class R:
+                        text = ('{"what":"CPU 과부하(95%)로 WorkerTask 응답 불가",'
+                                '"why":"ISR 폭주 → CPU 포화 → Task 선점 불가",'
+                                '"how":"vTaskDelay 추가로 태스크 양보 주기 확보",'
+                                '"issues":[{"id":1,"severity":"Critical","type":"cpu_overload",'
+                                '"task":"WorkerTask","scenario":"timing","summary":"CPU 95%",'
+                                '"confidence":0.9,"root_cause_candidates":[],'
+                                '"recommended_actions":[],"prevention":""}],'
+                                '"session_summary":"cpu 위험","overall_confidence":0.9}')
+                        model = 'mock'
+                        tokens_in = 20
+                        tokens_out = 40
+                    return R()
+
+            snap = {
+                'cpu_usage': 95, '_parser_stats': {},
+                'heap': {'free': 4000, 'used_pct': 51, 'total': 8192, 'min': 3900},
+                'tasks': [
+                    {'task_id': 0, 'name': 'WorkerTask', 'priority': 2,
+                     'state': 0, 'state_name': 'Running',
+                     'cpu_pct': 95, 'stack_hwm': 80, 'runtime_us': 0},
+                ],
+            }
+            issues = [{'type': 'cpu_overload', 'severity': 'Critical',
+                       'message': 'CPU 95%'}]
+
+            cfg = PipelineConfig.default()
+            cfg.ai.postmortem_mode = True
+            cfg.verify.mode = 'disabled'
+            cfg.triage.enabled = False
+
+            pipeline = AnalysisPipeline(provider=MockPostmortemProvider(), config=cfg)
+            result = pipeline.run(snap, issues)
+
+            has_pm     = result.postmortem is not None
+            is_type_ok = isinstance(result.postmortem, PostmortemDiagnosis) if has_pm else False
+            is_complete = result.postmortem.is_complete() if has_pm else False
+            what_ok    = '95' in result.postmortem.what if has_pm else False
+            why_ok     = '→' in result.postmortem.why  if has_pm else False
+            in_dict    = 'postmortem' in result.to_dict()
+
+            ok = has_pm and is_type_ok and is_complete and what_ok and why_ok and in_dict
+            return ok, (
+                f"has_pm={has_pm} is_complete={is_complete} "
+                f"what_ok={what_ok} why_ok={why_ok} in_dict={in_dict}"
+            )
+        results.append(_chk('A-14', 'A',
+                            'postmortem_mode — What/Why/How 3분리 + PostmortemDiagnosis 검증', _a14))
+
+        # A-15: Option D — Pipeline→Agent 컨텍스트 주입 통합 검증
+        #         RTOSDebuggerV3는 모듈 레벨 상대 import로 직접 로드 불가.
+        #         핵심 두 컴포넌트를 분리 검증:
+        #           (1) PipelineResult.to_agent_context() 출력 형식
+        #           (2) DiagnosticAgent.run(pipeline_result=...) 컨텍스트 주입
+        def _a15():
+            from ai.analysis_pipeline import (AnalysisPipeline, PipelineResult,
+                                               StageResult, PostmortemDiagnosis)
+            from ai.agent_loop import DiagnosticAgent
+            from ai.pipeline_config import PipelineConfig
+
+            # ── (1) PipelineResult.to_agent_context() 검증 ──────────────
+            pm = PostmortemDiagnosis(
+                what='CPU 92% 과부하',
+                why='ISR 폭주 → CPU 포화',
+                how='vTaskDelay 추가',
+            )
+            pr = PipelineResult(
+                issues=[{'severity': 'Critical', 'type': 'cpu_overload',
+                         'task': 'W', 'summary': 'CPU과부하'}],
+                session_summary='cpu 위험',
+                overall_confidence=0.9,
+                stage_results=[StageResult('s3_ai', True, 10)],
+                total_ms=55,
+                trust_score=0.85,
+                triage_result='TIER1',
+                postmortem=pm,
+            )
+            ctx = pr.to_agent_context()
+            has_header  = 'Pipeline 1차 분석 결과' in ctx
+            has_trust   = '0.85' in ctx
+            has_issue   = 'cpu_overload' in ctx
+            has_pm_what = 'CPU 92%' in ctx
+            has_pm_why  = '→' in ctx
+            to_dict_ok  = 'postmortem' in pr.to_dict()
+
+            # ── (2) DiagnosticAgent.run(pipeline_result=...) 주입 검증 ──
+            injected_contexts = []
+
+            class MockAgentProvider:
+                def generate(self, system, context, max_tokens, tier):
+                    injected_contexts.append(context)
+                    class R:
+                        text = ('{"action":"final_answer",'
+                                '"final_diagnosis":"cpu 확인",'
+                                '"recommended_actions":[],'
+                                '"confidence":0.9}')
+                        model = 'mock'; tokens_in = 10; tokens_out = 20
+                    return R()
+
+            snap = {
+                'cpu_usage': 92, '_parser_stats': {},
+                'heap': {'free': 3000, 'used_pct': 63, 'total': 8192, 'min': 2900},
+                'tasks': [{'task_id': 0, 'name': 'W', 'priority': 2,
+                            'state': 0, 'state_name': 'Running',
+                            'cpu_pct': 92, 'stack_hwm': 60, 'runtime_us': 0}],
+            }
+            issues = [{'type': 'cpu_overload', 'severity': 'Critical',
+                       'message': 'CPU 92%'}]
+
+            agent = DiagnosticAgent(provider=MockAgentProvider(), max_turns=1)
+            agent.run(snap, issues, pipeline_result=pr)
+
+            # 첫 번째 Agent 호출 컨텍스트에 Pipeline 베이스라인이 포함돼야 함
+            agent_got_ctx = (len(injected_contexts) > 0 and
+                             'Pipeline 1차 분석 결과' in injected_contexts[0])
+
+            ok = (has_header and has_trust and has_issue
+                  and has_pm_what and has_pm_why
+                  and to_dict_ok and agent_got_ctx)
+            return ok, (
+                f"to_agent_context: header={has_header} trust={has_trust} "
+                f"issue={has_issue} pm_what={has_pm_what} pm_why={has_pm_why} "
+                f"to_dict_ok={to_dict_ok} | "
+                f"agent_injection: ctx_received={len(injected_contexts)} "
+                f"pipeline_ctx_injected={agent_got_ctx}"
+            )
+        results.append(_chk('A-15', 'A',
+                            'Option D — Pipeline→Agent 컨텍스트 주입 통합 검증', _a15))
+
+        # A-16: Option B — ParallelAgentRunner 앙상블 검증
+        def _a16():
+            from ai.parallel_agent import ParallelAgentRunner, EnsembleResult
+
+            class MockParallelProvider:
+                """각 에이전트 호출마다 동일한 진단을 반환하는 Mock."""
+                call_count = 0
+                def generate(self, system, context, max_tokens, tier):
+                    self.__class__.call_count += 1
+                    class R:
+                        text = ('{"action":"final_answer",'
+                                '"final_diagnosis":"cpu_overload 확인",'
+                                '"recommended_actions":["vTaskDelay 추가","CPU 프로파일링"],'
+                                '"fix_code":"","confidence":0.9}')
+                        model = 'mock'; tokens_in = 10; tokens_out = 20
+                    return R()
+
+            snap = {
+                'cpu_usage': 90, '_parser_stats': {},
+                'timestamp_us': 1_000_000, 'sequence': 1,
+                'snapshot_count': 1, 'uptime_ms': 1000,
+                'heap': {'free': 4000, 'used_pct': 51, 'total': 8192, 'min': 3900},
+                'tasks': [{'task_id': 0, 'name': 'W', 'priority': 2, 'state': 0,
+                           'state_name': 'Running', 'cpu_pct': 90,
+                           'stack_hwm': 80, 'runtime_us': 0}],
+            }
+            issues = [{'type': 'cpu_overload', 'severity': 'Critical'}]
+
+            runner = ParallelAgentRunner(
+                provider=MockParallelProvider(),
+                n_agents=3, max_turns=1, timeout_s=10.0,
+            )
+            result = runner.run(snap, issues)
+
+            is_ensemble    = isinstance(result, EnsembleResult)
+            has_diagnosis  = bool(result.ensemble_diagnosis)
+            n_ok           = result.n_agents_succeeded == 3
+            score_ok       = 0.0 <= result.agreement_score <= 1.0
+            actions_ok     = len(result.recommended_actions) >= 1
+            dict_ok        = 'agreement_score' in result.to_dict()
+
+            ok = is_ensemble and has_diagnosis and n_ok and score_ok and actions_ok and dict_ok
+            return ok, (
+                f"is_ensemble={is_ensemble} succeeded={result.n_agents_succeeded} "
+                f"agreement={result.agreement_score:.2f} "
+                f"actions={len(result.recommended_actions)} dict_ok={dict_ok}"
+            )
+        results.append(_chk('A-16', 'A',
+                            'Option B — ParallelAgentRunner 앙상블 검증', _a16))
+
+        # A-17: Option E — MISRAChecker fix_code 정적 검사
+        def _a17():
+            from ai.misra_checker import MISRAChecker, MISRAViolation
+
+            checker = MISRAChecker()
+
+            # (1) 위반 없는 코드 → 빈 리스트
+            clean_code = '''
+static void vSafeTask(void *pvParameters) {
+    uint32_t ulCount = 0U;
+    for (;;) {
+        ulCount++;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+'''
+            no_violations = checker.check(clean_code)
+
+            # (2) 위반 있는 코드 → 감지
+            bad_code = '''
+void vBadISR(void) {
+    int x;
+    if (1) {
+        xQueueSend(q, &x, 0);
+    }
+    return;
+    x = 5;
+}
+'''
+            violations = checker.check(bad_code)
+
+            # (3) format_report 동작 확인
+            report_ok = checker.format_report(violations).startswith("##") if violations else True
+            clean_ok  = checker.format_report([]).startswith("✅")
+
+            # (4) severity_counts
+            counts = checker.severity_counts(violations)
+            counts_ok = 'total' in counts and counts['total'] == len(violations)
+
+            # (5) MISRAViolation 타입 확인
+            type_ok = all(isinstance(v, MISRAViolation) for v in violations)
+
+            # 핵심 판단: 위반 없는 코드 = 0건, 위반 있는 코드 >= 1건
+            detection_ok = len(no_violations) == 0 and len(violations) >= 1
+
+            ok = detection_ok and report_ok and clean_ok and counts_ok and type_ok
+            return ok, (
+                f"clean_violations={len(no_violations)} "
+                f"bad_violations={len(violations)} "
+                f"detection_ok={detection_ok} "
+                f"report_ok={report_ok} counts_ok={counts_ok}"
+            )
+        results.append(_chk('A-17', 'A',
+                            'Option E — MISRAChecker fix_code 정적 검사', _a17))
+
+
     if run_C:
         print(f"\n{'─'*65}")
         print("  GROUP C — 분석 / 상관관계 / 파이프라인")
@@ -679,7 +1070,7 @@ def run_validation(groups: list = None) -> bool:
 
     # 그룹별 요약
     print(f"\n{'═'*65}")
-    print(f"  30/30 Protocol — 결과 요약")
+    print(f"  37/37 Protocol — 결과 요약")
     print(f"{'─'*65}")
     for grp in ('P', 'A', 'C'):
         grp_res = [r for r in results if r.group == grp]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  github_cleanup.sh — ClaudeRTOS-Insight GitHub 저장소 정리 스크립트
-#  버전: v5.4.1 기준
+#  버전: v5.5.0 기준
 #
 #  역할:
 #    GitHub에 남아있는 삭제된 파일들을 제거해 현재 로컬 상태와 일치시킵니다.
@@ -259,13 +259,15 @@ PYEOF
 ClaudeRTOS-Insight v${VERSION}
 
 This commit replaces the repository with a clean state:
+- Added parallel_agent.py, misra_checker.py (v5.5.x)
+- Added tests/level2/ pytest 구조 (v5.5.0)
 - Removed deprecated/merged Python modules
 - Removed DEPRECATED firmware files
 - Reorganized docs/ into 6 category subdirectories
 - Merged Korean/English duplicate docs
-- All 30/30 Protocol checks pass
+- All 37/37 Protocol checks pass
 
-Validation: 30/30 PASS"
+Validation: 37/37 PASS"
 
     ok "새 히스토리 커밋 완료"
 
@@ -332,7 +334,7 @@ else
     else
         git commit -q -m "cleanup: remove ${REMOVED} stale files from v${VERSION}
 
-Removed files that were deleted/merged in v5.2.1~v5.4.1:
+Removed files that were deleted/merged in v5.2.1~v5.5.0:
 - Merged duplicate docs (ko + en → single bilingual)
 - Reorganized docs/ flat → category subdirectories
 - Removed unused Python modules

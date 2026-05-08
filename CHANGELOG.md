@@ -2412,3 +2412,251 @@ docs/ (flat 35개) → 6개 카테고리 서브디렉터리 25개
 
 ---
 
+## [5.4.2] — 2026-05-05
+
+### 변경 유형
+`feat` 기능 추가 (하위 호환) — AI 재질의 단계 (Stage 4b)
+
+### 요약
+HallucinationGuard 검증 실패 시 바로 fallback으로 전환하는 대신
+증거 기반 재질의(Evidence Injection)를 수행하는 **Stage 4b**를 추가했다.
+동일한 의미를 다른 형태로 재질의함으로써 환각 재발을 억제하고
+trust_score가 낮은 응답을 복구한다.
+
+### 신규 기능
+
+#### Stage 4b — Evidence Injection Retry (`host/ai/analysis_pipeline.py`)
+
+```
+Stage 4  Verify     HallucinationGuard → trust 낮음 감지
+Stage 4b Retry      최대 2회 재질의
+  1차: Evidence Injection  — mismatch 실제값을 프롬프트 앞에 명시
+                             시스템 역할: '감사자' (skeptic)
+  2차: Role Switch          — chain-of-thought 역할
+       Context Compression — 관련 태스크·이슈만 포함한 최소 컨텍스트
+Stage 5  PostProcess (trust 회복 시 정상 진행)
+Stage 6  Fallback    (2회 재질의 후에도 실패 시)
+```
+
+#### RetryConfig (`host/ai/pipeline_config.py`)
+
+| 필드 | 기본값 | 설명 |
+|------|--------|------|
+| `enabled` | `True` | 재질의 활성화 여부 |
+| `max_retries` | `2` | 최대 재질의 횟수 |
+| `min_trust_to_retry` | `0.7` | 이 값 미만일 때만 재질의 |
+| `tier_on_retry` | `'same'` | 재질의 모델 티어 (`same`/`TIER1`/`TIER2`) |
+| `compress_context` | `True` | 2차 재질의 시 컨텍스트 압축 여부 |
+| `max_context_tasks` | `3` | 압축 시 포함할 최대 태스크 수 |
+
+#### 프리셋별 적용
+
+| 프리셋 | retry.enabled | tier_on_retry | 설명 |
+|--------|--------------|---------------|------|
+| `default` | `True` | `same` | 동일 tier로 재질의 |
+| `realtime` | `False` | — | 지연 최소화 우선 |
+| `deep` | `True` | `TIER1` | 최고 모델로 에스컬레이션 |
+| `offline` | `False` | — | API 없음 |
+
+#### 환경 변수 추가
+
+```bash
+CLAUDERTOS_RETRY_ENABLED=false   # 재질의 비활성화
+CLAUDERTOS_RETRY_MAX=1           # 최대 1회만
+```
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-11 RetryConfig 프리셋 검증 | ✅ PASS |
+| A-12 Evidence Injection 동작 검증 | ✅ PASS |
+| 32/32 Protocol | ✅ 32/32 PASS (GROUP P 10/10 · A 12/12 · C 10/10) |
+| Python 문법 | ✅ 60개 파일 오류 없음 |
+
+---
+
+## v5.4.3 — 2026-05-07
+
+### 버그 수정
+
+#### S4b 재질의 트리거 조건 오류 수정 (`analysis_pipeline.py`)
+
+`_s4b_retry()` 진입 조건이 `trust >= 0.0`(항상 True)으로 잘못 구현되어
+`RetryConfig.min_trust_to_retry` 설정이 완전히 무시되던 버그를 수정했다.
+
+```python
+# 수정 전 (버그)
+if cfg.retry.enabled and trust >= 0.0:
+
+# 수정 후
+if cfg.retry.enabled and trust < cfg.retry.min_trust_to_retry:
+```
+
+**영향:** `min_trust_to_retry=0.7`(기본값) 설정 시 trust ≥ 0.7인 응답도
+불필요하게 재질의되던 문제 해결. 비용 및 지연 감소.
+
+### 검증 추가
+
+#### A-13: S4b CoT 경로 end-to-end 검증 (`integrated_demo.py`)
+
+Mock Provider를 이용해 `_SYSTEM_SKEPTIC`(1차)과
+`_SYSTEM_CHAIN_OF_THOUGHT`(2차) 시스템 프롬프트가 실제로 호출되는지,
+수정된 `min_trust_to_retry` 트리거가 올바르게 동작하는지 검증한다.
+
+| 검증 항목 | 결과 |
+|----------|------|
+| total_calls=3 (S3 본호출 + S4b 1차·2차) | ✅ |
+| 1차: `_SYSTEM_SKEPTIC` 프롬프트 사용 | ✅ |
+| 2차: `_SYSTEM_CHAIN_OF_THOUGHT` 프롬프트 사용 | ✅ |
+| `min_trust_to_retry` 트리거 정상 동작 | ✅ |
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-13 CoT 경로 검증 | ✅ PASS |
+| 33/33 Protocol | ✅ 33/33 PASS (GROUP P 10/10 · A 13/13 · C 10/10) |
+| Python 문법 | ✅ 60개 파일 오류 없음 |
+
+---
+
+## v5.5.0 — 2026-05-08
+
+이번 릴리스는 이번 세션에서 개발된 신규 기능 전체를 하나의 MINOR 버전으로 통합한다.
+하위 호환성을 유지하며, 기존 API는 모두 그대로 동작한다.
+
+### 신규 기능
+
+#### Option A: postmortem What/Why/How 3분리 진단
+
+postmortem 모드 AI 출력을 3개의 구조화된 필드로 분리한다.
+
+```python
+cfg = PipelineConfig.default()
+cfg.ai.postmortem_mode = True
+
+result = pipeline.run(snap, issues)
+pm = result.postmortem                 # PostmortemDiagnosis
+
+print(pm.what)          # "CPU 과부하(95%)로 WorkerTask 응답 불가"
+print(pm.why)           # "ISR 폭주 → CPU 포화 → Task 선점 불가"
+print(pm.how)           # "vTaskDelay 추가로 태스크 양보 주기 확보"
+print(pm.format_human())               # 🔍/🔗/🔧 아이콘 형식
+print(pm.is_complete())                # bool
+'postmortem' in result.to_dict()       # True
+```
+
+**변경 파일:** `ai/pipeline_config.py` (`AIConfig.postmortem_mode`),
+`ai/analysis_pipeline.py` (`PostmortemDiagnosis`, `PipelineResult.postmortem`,
+`_SYSTEM_POSTMORTEM`, `_extract_postmortem()`, `to_agent_context()`),
+`ai/rtos_debugger.py` (자동 활성화)
+
+---
+
+#### Option D: DiagnosticAgent ↔ AnalysisPipeline 통합
+
+Pipeline 1차 분석 결과를 DiagnosticAgent 초기 컨텍스트로 주입한다.
+
+```python
+# 통합 API
+result = debugger.debug_with_agent(snap, issues)
+result['pipeline']           # PipelineResult.to_dict()
+result['agent']              # AgentResult (final_diagnosis, tool_calls, ...)
+result['combined']           # 통합 요약 (issues, trust_score, postmortem, ...)
+
+# 컴포넌트 직접 사용
+ctx = pipeline_result.to_agent_context()
+agent.run(snap, issues, pipeline_result=pipeline_result)
+```
+
+**변경 파일:** `ai/analysis_pipeline.py` (`PipelineResult.to_agent_context()`),
+`ai/agent_loop.py` (`DiagnosticAgent.run(pipeline_result=...)`),
+`ai/rtos_debugger.py` (`debug_with_agent()` 신규)
+
+---
+
+#### Level 2 검증 구조 — pytest 통합
+
+기존 `integrated_demo.py` 단일 파일 검증에 더해 pytest 스타일의 독립 검증 계층을 추가했다.
+
+```
+tests/level2/
+├── conftest.py              # 픽스처, with_timeout, 마커
+├── test_P_parser.py         # GROUP P: P-01 ~ P-10
+├── test_A_ai.py             # GROUP A: A-01 ~ A-15
+├── test_C_pipeline.py       # GROUP C: C-01 ~ C-10
+└── run_level2.py            # pytest 미설치 환경용 자체 실행기
+```
+
+```bash
+# pytest (설치 후)
+pytest tests/level2/ -v --timeout=5
+pytest tests/level2/ -m "group_A" -v
+
+# 자체 실행기
+PYTHONPATH=host python3 tests/level2/run_level2.py
+PYTHONPATH=host python3 tests/level2/run_level2.py -m A
+```
+
+---
+
+#### Option B: ParallelAgentRunner — 병렬 멀티에이전트 앙상블
+
+```python
+from ai.parallel_agent import ParallelAgentRunner
+
+runner = ParallelAgentRunner(provider=provider, n_agents=3, max_turns=4)
+result = runner.run(snap, issues)
+
+result.ensemble_diagnosis    # 다수결 진단 (불일치 시 소수 의견 포함)
+result.agreement_score       # 0.0–1.0 에이전트 간 합의도
+result.recommended_actions   # 빈도순 정렬 (중복 제거)
+result.n_agents_succeeded
+result.to_dict()
+```
+
+**신규 파일:** `host/ai/parallel_agent.py`
+
+---
+
+#### Option E: MISRAChecker — AI fix_code MISRA C:2012 1차 검사
+
+```python
+from ai.misra_checker import MISRAChecker
+
+checker    = MISRAChecker()
+violations = checker.check(agent_result.fix_code)
+report     = checker.format_report(violations)
+counts     = checker.severity_counts(violations)
+# {'mandatory': 2, 'required': 1, 'advisory': 0, 'total': 3}
+```
+
+**검사 규칙:** Mandatory 4 · Required 5 · Advisory 3 (총 12개)
+ISR unsafe API, 불변 조건, UB 초기화, 포인터 캐스팅, ISR 다중 return 등.
+
+> ⚠️ 공식 MISRA 인증 도구(PC-lint Plus, Polyspace)를 대체하지 않음.
+
+**신규 파일:** `host/ai/misra_checker.py`
+
+---
+
+### 버그 수정
+
+이 릴리스에는 v5.4.3의 버그 수정이 포함되지 않는다.
+버그 수정은 v5.4.3에서 별도 릴리스됐다.
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-14 postmortem What/Why/How | ✅ PASS |
+| A-15 Pipeline→Agent 컨텍스트 주입 | ✅ PASS |
+| A-16 ParallelAgentRunner 앙상블 | ✅ PASS |
+| A-17 MISRAChecker fix_code 검사 | ✅ PASS |
+| Level 2 run_level2.py | ✅ 37/37 PASS (P 10/10 · A 17/17 · C 10/10) — 143ms |
+| integrated_demo.py | ✅ 37/37 PASS — 회귀 없음 |
+| Python 문법 | ✅ 62개 파일 오류 없음 |
+
+---
+

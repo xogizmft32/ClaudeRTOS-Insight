@@ -376,7 +376,7 @@ patch -p1 -d /path/to/install < ${PATCH_NAME}.patch
 \`\`\`bash
 cd /path/to/install
 python3 examples/integrated_demo.py --validate
-# 기대 결과: 30/30 PASS
+# 기대 결과: XX/XX PASS (버전에 따라 다름)
 \`\`\`
 
 ## 롤백

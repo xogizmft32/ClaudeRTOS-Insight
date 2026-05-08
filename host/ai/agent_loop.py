@@ -241,18 +241,22 @@ class DiagnosticAgent:
             trends:   Optional[Dict] = None,
             timeline: Optional[List] = None,
             rg_results: Optional[List] = None,
-            tools:    Optional[List[AgentTool]] = None) -> AgentResult:
+            tools:    Optional[List[AgentTool]] = None,
+            pipeline_result: Optional[Any] = None) -> 'AgentResult':
         """
         에이전트 루프 실행.
 
         Parameters
         ----------
-        snap       : ParsedSnapshot.to_dict()
-        issues     : AnalysisEngine 결과
-        trends     : TrendAnalyzer 결과
-        timeline   : 타임라인 이벤트
-        rg_results : ResourceGraph 결과
-        tools      : 커스텀 도구 목록 (없으면 기본 도구 사용)
+        snap            : ParsedSnapshot.to_dict()
+        issues          : AnalysisEngine 결과
+        trends          : TrendAnalyzer 결과
+        timeline        : 타임라인 이벤트
+        rg_results      : ResourceGraph 결과
+        tools           : 커스텀 도구 목록 (없으면 기본 도구 사용)
+        pipeline_result : AnalysisPipeline.run() 결과 (Option D 통합).
+                          제공 시 Pipeline 1차 분석을 초기 컨텍스트 앞에 삽입해
+                          Agent가 베이스라인으로 사용한다.
         """
         t0 = time.time()
         _tools = {t.name: t for t in (tools or _default_tools(snap, issues, trends, timeline))}
@@ -279,6 +283,9 @@ class DiagnosticAgent:
             "위 정보를 분석하고, 필요하면 도구를 호출해 추가 정보를 수집한 뒤 "
             "최종 진단을 JSON으로 제공하라."
         )
+        # Pipeline 1차 분석 결과가 있으면 앞에 삽입 (Option D)
+        if pipeline_result is not None and hasattr(pipeline_result, 'to_agent_context'):
+            initial_msg = pipeline_result.to_agent_context() + "\n\n---\n\n" + initial_msg
         conversation.append({'role': 'user', 'content': initial_msg})
 
         # 에이전트 루프

@@ -2,7 +2,7 @@
 """
 pipeline_config.py — AI 분석 파이프라인 설정
 
-파이프라인 7단계 각각의 동작을 세밀하게 제어한다.
+파이프라인 8단계 각각의 동작을 세밀하게 제어한다.
 
 사용 예시:
     from ai.pipeline_config import PipelineConfig
@@ -21,6 +21,8 @@ pipeline_config.py — AI 분석 파이프라인 설정
     CLAUDERTOS_VERIFY_MODE       : disabled / loose / strict
     CLAUDERTOS_TRIAGE_ENABLED    : true / false
     CLAUDERTOS_CACHE_TTL         : 캐시 TTL (초)
+    CLAUDERTOS_RETRY_ENABLED     : true / false
+    CLAUDERTOS_RETRY_MAX         : 최대 재질의 횟수 (기본 2)
 """
 
 from __future__ import annotations
@@ -141,6 +143,7 @@ class AIConfig:
     max_output_tokens:  int            = 2048
     temperature:        Optional[float] = None
     structured_output:  bool           = True
+    postmortem_mode:    bool           = False  # True → What/Why/How 3분리 출력
 
 
 # ── Stage 4 설정 ─────────────────────────────────────────────
@@ -192,6 +195,42 @@ class PostProcessConfig:
     emit_events:    bool = False
 
 
+# ── Stage 4b 설정 ────────────────────────────────────────────
+
+@dataclasses.dataclass
+class RetryConfig:
+    """
+    Stage 4b — 환각 감지 시 증거 기반 재질의.
+
+    HallucinationGuard가 mismatch/unverifiable 판정을 내렸을 때
+    fallback으로 바로 전환하지 않고 수정된 프롬프트로 재질의한다.
+
+    재질의 전략 (시도 순서):
+        1차  Evidence Injection  — mismatch 항목의 실제 수치를 명시해
+                                   같은 모델에 재질의
+        2차  Role + Compress     — 'skeptic' 역할 + 압축 컨텍스트로
+                                   관련 데이터만 재전송
+
+    Attributes
+    ----------
+    enabled          : 재질의 활성화 여부
+    max_retries      : 최대 재질의 횟수 (기본 2 — 1차·2차 각 1회)
+    min_trust_to_retry: 이 값 이상이면 재질의 없이 통과
+                        (너무 낮을 때만 재질의)
+    tier_on_retry    : 재질의 시 사용 모델 티어
+                       'same' — 원래 tier 유지
+                       'TIER1' — 최고 모델로 에스컬레이션
+    compress_context : 2차 재질의 시 컨텍스트를 관련 데이터만으로 압축
+    max_context_tasks: 압축 시 포함할 최대 태스크 수
+    """
+    enabled:           bool  = True
+    max_retries:       int   = 2
+    min_trust_to_retry: float = 0.7   # trust < 0.7 일 때만 재질의
+    tier_on_retry:     str   = 'same' # 'same' | 'TIER1' | 'TIER2'
+    compress_context:  bool  = True
+    max_context_tasks: int   = 3
+
+
 # ── Stage 6 설정 ─────────────────────────────────────────────
 
 @dataclasses.dataclass
@@ -233,6 +272,7 @@ class PipelineConfig:
     Stage 2 Context     — 컨텍스트 구성 + 압축
     Stage 3 AI Call     — 본 AI 호출 (Tier 자동/수동)
     Stage 4 Verify      — HallucinationGuard 검증
+    Stage 4b Retry      — 환각 감지 시 증거 기반 재질의 (신규)
     Stage 5 PostProcess — 파싱 / 캐싱 / 학습
     Stage 6 Fallback    — 실패 시 대안 체인
     """
@@ -241,6 +281,7 @@ class PipelineConfig:
     context:     ContextConfig      = dataclasses.field(default_factory=ContextConfig)
     ai:          AIConfig           = dataclasses.field(default_factory=AIConfig)
     verify:      VerificationConfig = dataclasses.field(default_factory=VerificationConfig)
+    retry:       RetryConfig        = dataclasses.field(default_factory=RetryConfig)
     postprocess: PostProcessConfig  = dataclasses.field(default_factory=PostProcessConfig)
     fallback:    FallbackConfig     = dataclasses.field(default_factory=FallbackConfig)
 
@@ -265,6 +306,7 @@ class PipelineConfig:
             ),
             ai=AIConfig(tier='TIER3', timeout_s=30, max_output_tokens=512),
             verify=VerificationConfig(mode='disabled'),
+            retry=RetryConfig(enabled=False),  # 실시간 모드: 재질의 없음
             postprocess=PostProcessConfig(cache_ttl_s=300, learn_enabled=False),
             fallback=FallbackConfig(chain=['rule_based', 'empty']),
         )
@@ -290,6 +332,13 @@ class PipelineConfig:
                 structured_output=True,
             ),
             verify=VerificationConfig(mode='strict', min_trust=0.6),
+            retry=RetryConfig(
+                enabled=True,
+                max_retries=2,
+                min_trust_to_retry=0.8,  # deep 모드는 더 엄격하게 재질의
+                tier_on_retry='TIER1',   # 재질의도 최고 모델
+                compress_context=False,  # deep 모드는 압축 없이 전체 컨텍스트
+            ),
             postprocess=PostProcessConfig(
                 learn_enabled=True,
                 parse_fix_code=True,
@@ -337,6 +386,10 @@ class PipelineConfig:
             cfg.triage.enabled = v.lower() == 'true'
         if (v := os.getenv('CLAUDERTOS_CACHE_TTL')):
             cfg.postprocess.cache_ttl_s = int(v)
+        if (v := os.getenv('CLAUDERTOS_RETRY_ENABLED')):
+            cfg.retry.enabled = v.lower() == 'true'
+        if (v := os.getenv('CLAUDERTOS_RETRY_MAX')):
+            cfg.retry.max_retries = int(v)
         return cfg
 
     def summary(self) -> str:
@@ -347,5 +400,6 @@ class PipelineConfig:
             f"ctx={self.context.max_tokens}tok/{self.context.masking_level} | "
             f"ai={self.ai.tier}/{self.ai.timeout_s}s | "
             f"verify={self.verify.mode} | "
+            f"retry={'on×' + str(self.retry.max_retries) if self.retry.enabled else 'off'} | "
             f"fallback={self.fallback.chain[0]}"
         )

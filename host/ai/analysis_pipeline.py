@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-analysis_pipeline.py — 7단계 AI 분석 파이프라인 실행기
+analysis_pipeline.py — 8단계 AI 분석 파이프라인 실행기
 
 PipelineConfig 설정에 따라 각 단계를 순차 실행한다.
 
@@ -9,6 +9,7 @@ PipelineConfig 설정에 따라 각 단계를 순차 실행한다.
     Stage 2  Context     컨텍스트 구성 + 마스킹 + 압축
     Stage 3  AI Call     본 AI 호출 (Tier 자동/수동, 재시도)
     Stage 4  Verify      HallucinationGuard 신뢰도 검증
+    Stage 4b Retry       환각 감지 시 증거 기반 재질의 (Evidence Injection)
     Stage 5  PostProcess 파싱 / 캐싱 / 학습 기록
     Stage 6  Fallback    실패 시 rule_based / cached / degraded / empty
 
@@ -56,6 +57,36 @@ _log = logging.getLogger(__name__)
 # ── 결과 클래스 ──────────────────────────────────────────────
 
 @dataclasses.dataclass
+class PostmortemDiagnosis:
+    """
+    postmortem 모드 전용 — What/Why/How 3분리 진단.
+
+    Attributes
+    ----------
+    what : 무슨 일이 발생했나 — 스냅샷 수치 기반 증상 기술
+    why  : 왜 발생했나 — 원인→결과 인과 체인 (A → B → C)
+    how  : 어떻게 수정하나 — FreeRTOS API 처방 + fix_code 요약
+    """
+    what: str = ''
+    why:  str = ''
+    how:  str = ''
+
+    def is_complete(self) -> bool:
+        """세 필드 모두 채워졌는지 확인."""
+        return bool(self.what and self.why and self.how)
+
+    def to_dict(self) -> Dict:
+        return {'what': self.what, 'why': self.why, 'how': self.how}
+
+    def format_human(self) -> str:
+        lines = []
+        if self.what: lines.append(f"🔍 WHAT  {self.what}")
+        if self.why:  lines.append(f"🔗 WHY   {self.why}")
+        if self.how:  lines.append(f"🔧 HOW   {self.how}")
+        return '\n'.join(lines)
+
+
+@dataclasses.dataclass
 class StageResult:
     """단일 단계 실행 결과."""
     stage:       str
@@ -84,6 +115,7 @@ class PipelineResult:
     triage_result:      str   = ''
     trust_score:        float = 1.0
     _fallback:          bool  = False
+    postmortem:         Optional['PostmortemDiagnosis'] = None  # postmortem 모드 전용
 
     def to_dict(self) -> Dict:
         # audit_log: 각 stage 요약 (사람이 읽기 쉬운 형태)
@@ -94,7 +126,7 @@ class PipelineResult:
             else:
                 reason = s.skip_reason or '실패'
                 audit.append(f"[SKIP/FAIL] {s.stage}: {reason}")
-        return {
+        d = {
             'issues':             self.issues,
             'session_summary':    self.session_summary,
             'overall_confidence': self.overall_confidence,
@@ -110,6 +142,41 @@ class PipelineResult:
                 'audit_log':       audit,
             },
         }
+        if self.postmortem is not None:
+            d['postmortem'] = self.postmortem.to_dict()
+        return d
+
+    def to_agent_context(self) -> str:
+        """
+        Pipeline 결과를 DiagnosticAgent 초기 컨텍스트용 요약 문자열로 변환.
+
+        Agent가 Pipeline 분석을 베이스라인으로 삼아 멀티턴 심화 분석을 수행한다.
+        """
+        lines = [
+            "## Pipeline 1차 분석 결과 (베이스라인)",
+            f"- trust_score : {self.trust_score:.2f}",
+            f"- triage      : {self.triage_result or 'N/A'}",
+            f"- fallback    : {'사용됨' if self.used_fallback else '없음'}",
+            f"- 이슈 수     : {len(self.issues)}건",
+        ]
+        if self.issues:
+            lines.append("- 감지 이슈:")
+            for iss in self.issues[:5]:
+                sev  = iss.get('severity', '?')
+                typ  = iss.get('type', '?')
+                task = iss.get('task', '')
+                lines.append(f"    [{sev}] {typ}" + (f" ({task})" if task else ""))
+        if self.session_summary:
+            lines.append(f"- 요약: {self.session_summary}")
+        if self.postmortem and self.postmortem.is_complete():
+            lines.append("- What/Why/How:")
+            lines.append(f"    WHAT: {self.postmortem.what}")
+            lines.append(f"    WHY : {self.postmortem.why}")
+            lines.append(f"    HOW : {self.postmortem.how}")
+        lines.append(
+            "\n위 1차 분석을 바탕으로 미확인 사항을 도구로 추가 수집해 심화 진단하라."
+        )
+        return "\n".join(lines)
 
 
 # ── 파이프라인 ────────────────────────────────────────────────
@@ -202,17 +269,29 @@ class AnalysisPipeline:
             return self._fallback_result(snap, issues, 'AI 호출 실패', t0)
 
         # ── Stage 4: Verify ──────────────────────────────────
-        trust, ok = self._s4_verify(ai_raw, snap, issues, cfg.verify)
+        trust, ok, notes = self._s4_verify(ai_raw, snap, issues, cfg.verify)
         if not ok:
-            r = self._fallback_result(snap, issues, f'검증 실패(trust={trust:.2f})', t0)
-            r.trust_score = trust
-            return r
+            # ── Stage 4b: Retry (Evidence Injection) ─────────
+            # min_trust_to_retry 미만일 때만 재질의 (이상이면 품질 충분)
+            if cfg.retry.enabled and trust < cfg.retry.min_trust_to_retry:
+                ai_raw, trust, ok = self._s4b_retry(
+                    ai_raw, snap, issues, ctx_str, notes,
+                    cfg.ai, cfg.retry, triage,
+                )
+            if not ok:
+                r = self._fallback_result(snap, issues,
+                                          f'검증 실패(trust={trust:.2f})', t0)
+                r.trust_score = trust
+                return r
 
         # ── Stage 5: PostProcess ─────────────────────────────
-        final = self._s5_postprocess(ai_raw, snap, issues, cfg.postprocess)
+        pm_mode = cfg.ai.postmortem_mode
+        final = self._s5_postprocess(ai_raw, snap, issues, cfg.postprocess,
+                                     postmortem_mode=pm_mode)
 
         total_ms = _ms(t0)
         _log.info("[Pipeline] 완료 %dms trust=%.2f triage=%s", total_ms, trust, triage)
+        pm = final.pop('_postmortem', None) if pm_mode else None
         return PipelineResult(
             issues=final.get('issues', []),
             session_summary=final.get('session_summary', ''),
@@ -221,6 +300,7 @@ class AnalysisPipeline:
             total_ms=total_ms,
             triage_result=triage,
             trust_score=trust,
+            postmortem=pm,
         )
 
     # ── Stage 구현 ────────────────────────────────────────────
@@ -339,11 +419,14 @@ class AnalysisPipeline:
             tier = getattr(AITier, cfg.tier, AITier.TIER2)
 
         n_crit = sum(1 for i in issues if i.get('severity') == 'Critical')
-        system = (
-            f"FreeRTOS/STM32 임베디드 디버깅 전문가."
-            f"{f' Critical {n_crit}건 집중.' if n_crit else ''}"
-            f"{' JSON 형식: {issues,causal_chain,recommended_actions}.' if cfg.structured_output else ''}"
-        )
+        if cfg.postmortem_mode:
+            system = self._SYSTEM_POSTMORTEM
+        else:
+            system = (
+                f"FreeRTOS/STM32 임베디드 디버깅 전문가."
+                f"{f' Critical {n_crit}건 집중.' if n_crit else ''}"
+                f"{' JSON 형식: {issues,causal_chain,recommended_actions}.' if cfg.structured_output else ''}"
+            )
 
         for attempt in range(cfg.max_retries + 1):
             try:
@@ -368,7 +451,7 @@ class AnalysisPipeline:
         t = time.time()
         if cfg.mode == 'disabled':
             self._stage('verify', True, t, output='disabled')
-            return 1.0, True
+            return 1.0, True, []
 
         notes = self._guard.verify(ai_result, snap, issues)
         summary = HallucinationGuard.summary(notes)
@@ -377,11 +460,221 @@ class AnalysisPipeline:
 
         self._stage('verify', ok, t, output=round(trust, 3))
         _log.info("[Stage4] trust=%.2f ok=%s", trust, ok)
-        return trust, ok
+        return trust, ok, notes
+
+    # ── Stage 4b ─────────────────────────────────────────────
+
+    # 전략 1: Evidence Injection 시스템 프롬프트
+    # postmortem 전용: What/Why/How 3분리 출력 요청
+    _SYSTEM_POSTMORTEM = (
+        "당신은 FreeRTOS/STM32 임베디드 시스템 포스트모템 분석가다.\n"
+        "다음 3단계 구조로만 분석하고 JSON으로만 응답하라:\n\n"
+        "1단계 — WHAT (무슨 일이 발생했나)\n"
+        "  스냅샷 수치(CPU%, heap_free, stack_hwm)를 그대로 인용해 증상을 객관적으로 기술.\n"
+        "  없는 값은 추측하지 말 것.\n\n"
+        "2단계 — WHY (왜 발생했나)\n"
+        "  원인→결과 인과 체인: A → B → C 형식으로 3~5단계 이내 기술.\n\n"
+        "3단계 — HOW (어떻게 수정하나)\n"
+        "  FreeRTOS API 안전성을 검토한 처방. 파일명·라인·Before/After 포함.\n\n"
+        "응답 스키마 (JSON only):\n"
+        '{"what":"...(한국어)","why":"A → B → C","how":"...(한국어)",'
+        '"issues":[...기존스키마...],'
+        '"session_summary":"...","overall_confidence":0.0}'
+    )
+
+    _SYSTEM_SKEPTIC = (
+        "당신은 FreeRTOS/STM32 임베디드 시스템 감사자다.\n"
+        "규칙:\n"
+        "1. [수정된 실측값] 블록의 수치를 최우선으로 신뢰하라.\n"
+        "2. 스냅샷에 없는 태스크명·수치를 임의로 생성하지 말라.\n"
+        "3. 확인된 사실만 서술하고, 불확실한 내용은 '미확인'으로 표시하라.\n"
+        "4. JSON 형식으로만 응답하라."
+    )
+
+    # 전략 2: Chain-of-Thought 시스템 프롬프트
+    _SYSTEM_CHAIN_OF_THOUGHT = (
+        "당신은 FreeRTOS/STM32 임베디드 디버깅 전문가다.\n"
+        "다음 순서로만 분석하라:\n"
+        "1단계. 제공된 수치를 그대로 나열한다 (없는 값은 추측 금지).\n"
+        "2단계. 나열한 수치만 근거로 이슈 유형을 판단한다.\n"
+        "3단계. 원인→결과 체인을 작성한다 (A → B → C).\n"
+        "4단계. FreeRTOS API 안전성을 확인한 처방을 제시한다.\n"
+        "JSON 형식으로만 응답하라."
+    )
+
+    def _s4b_retry(self,
+                   prev_result: Dict,
+                   snap: Dict,
+                   issues: List[Dict],
+                   original_ctx: str,
+                   notes: List,
+                   ai_cfg,
+                   retry_cfg,
+                   triage: str) -> tuple:
+        """
+        Stage 4b: 환각 감지 시 증거 기반 재질의.
+
+        1차: Evidence Injection — mismatch 실제값을 프롬프트 앞에 명시
+        2차: Role Switch + Context Compression — skeptic 역할 + 관련 데이터만
+
+        Returns
+        -------
+        (ai_result, trust, ok)
+        """
+        from ai.providers.base import AITier
+        t_retry = time.time()
+        cfg_v = self._config.verify
+
+        best_result = prev_result
+        best_trust  = 0.0
+        best_ok     = False
+
+        for attempt in range(1, retry_cfg.max_retries + 1):
+            _log.info("[Stage4b] 재질의 %d/%d 시작", attempt, retry_cfg.max_retries)
+
+            # ── 재질의 프롬프트 구성 ─────────────────────────
+            if attempt == 1:
+                rephrased_ctx = self._build_correction_prompt(
+                    original_ctx, notes, snap)
+                system_role   = self._SYSTEM_SKEPTIC
+            else:
+                rephrased_ctx = self._compress_context_for_retry(
+                    snap, issues, notes, retry_cfg.max_context_tasks)
+                system_role   = self._SYSTEM_CHAIN_OF_THOUGHT
+
+            # ── Tier 결정 ────────────────────────────────────
+            if retry_cfg.tier_on_retry == 'same':
+                tier = AITier.TIER1 if triage == 'CRITICAL' else AITier.TIER2
+            else:
+                tier = getattr(AITier, retry_cfg.tier_on_retry, AITier.TIER1)
+
+            # ── AI 재호출 ────────────────────────────────────
+            try:
+                resp = self._provider.generate(
+                    system_role,
+                    rephrased_ctx,
+                    ai_cfg.max_output_tokens,
+                    tier,
+                )
+                retry_raw = {
+                    'text': resp.text,
+                    'model': resp.model,
+                    'tokens_in': resp.tokens_in,
+                    'tokens_out': resp.tokens_out,
+                    '_retry_attempt': attempt,
+                }
+            except Exception as e:
+                _log.warning("[Stage4b] 재질의 %d 실패: %s", attempt, e)
+                self._stage(f'retry_{attempt}', False, t_retry,
+                            skip_reason=f'API 오류: {type(e).__name__}')
+                continue
+
+            # ── 재검증 ───────────────────────────────────────
+            retry_trust, retry_ok, retry_notes = self._s4_verify(
+                retry_raw, snap, issues, cfg_v)
+            # _s4_verify가 self._stages에 append하므로 레이블 교정
+            if self._stages and self._stages[-1].stage == 'verify':
+                self._stages[-1] = StageResult(
+                    stage=f'retry_{attempt}_verify',
+                    ok=retry_ok,
+                    duration_ms=self._stages[-1].duration_ms,
+                    output=round(retry_trust, 3),
+                )
+
+            _log.info("[Stage4b] attempt=%d trust=%.2f ok=%s",
+                      attempt, retry_trust, retry_ok)
+
+            if retry_trust > best_trust:
+                best_result = retry_raw
+                best_trust  = retry_trust
+                best_ok     = retry_ok
+                notes       = retry_notes
+
+            if retry_ok:
+                _log.info("[Stage4b] %d회 재질의 만에 통과 (trust=%.2f)",
+                          attempt, retry_trust)
+                break
+
+        return best_result, best_trust, best_ok
+
+    def _build_correction_prompt(self,
+                                 original_ctx: str,
+                                 notes: List,
+                                 snap: Dict) -> str:
+        """
+        전략 1 — Evidence Injection.
+
+        mismatch/unverifiable 항목의 실제 수치를 원본 컨텍스트
+        앞에 고정 블록으로 삽입한다.
+        """
+        mismatches = [n for n in notes
+                      if getattr(n, 'status', '') in ('mismatch', 'unverifiable')]
+
+        if not mismatches:
+            return original_ctx
+
+        lines = ["[수정된 실측값 — 이 블록의 수치를 최우선으로 사용하라]"]
+        for note in mismatches:
+            claim  = getattr(note, 'claim',  '')
+            actual = getattr(note, 'actual', '')
+            detail = getattr(note, 'detail', '')
+            lines.append(f"  × AI 주장: {claim}")
+            lines.append(f"  ✓ 실제값:  {actual}  ({detail})")
+
+        task_names = [t.get('name', '') for t in snap.get('tasks', [])]
+        if task_names:
+            lines.append(f"  ✓ 실제 태스크 목록: {task_names}")
+
+        lines.append("[위 수정값을 반영하여 다시 분석하라]\n")
+        return "\n".join(lines) + "\n" + original_ctx
+
+    def _compress_context_for_retry(self,
+                                    snap: Dict,
+                                    issues: List[Dict],
+                                    notes: List,
+                                    max_tasks: int) -> str:
+        """
+        전략 2 — Context Compression.
+
+        환각이 발생한 태스크와 실제 위험 태스크만 포함한
+        최소 컨텍스트를 구성한다.
+        """
+        import json as _json
+
+        hallucinated = set()
+        for note in notes:
+            claim = getattr(note, 'claim', '')
+            if "task '" in claim:
+                try:
+                    hallucinated.add(claim.split("'")[1].lower())
+                except IndexError:
+                    pass
+
+        relevant_tasks = [
+            t for t in snap.get('tasks', [])
+            if (t.get('name', '').lower() in hallucinated
+                or t.get('stack_hwm', 999) < 20
+                or t.get('cpu_pct', 0) > 80)
+        ][:max_tasks]
+
+        mini = {
+            'cpu_usage':     snap.get('cpu_usage'),
+            'heap_free':     snap.get('heap', {}).get('free'),
+            'heap_used_pct': snap.get('heap', {}).get('used_pct'),
+            'tasks':         relevant_tasks,
+            'issues':        issues[:2],
+        }
+
+        header = (
+            "[압축 컨텍스트 — 관련 태스크만 포함]\n"
+            "수치에 없는 내용은 추측하지 말 것.\n\n"
+        )
+        return header + _json.dumps(mini, ensure_ascii=False, indent=2)
 
     def _s5_postprocess(self, ai_result: Dict, snap: Dict,
-                        issues: List[Dict], cfg: PostProcessConfig) -> Dict:
-        """Stage 5: fix 코드 추출 / 캐싱 / 학습."""
+                        issues: List[Dict], cfg: PostProcessConfig,
+                        postmortem_mode: bool = False) -> Dict:
+        """Stage 5: fix 코드 추출 / 캐싱 / 학습 / postmortem 3분리."""
         t = time.time()
         final = dict(ai_result)
 
@@ -395,6 +688,10 @@ class AnalysisPipeline:
                 final['fix_after']  = blocks[1].strip()
             elif len(blocks) == 1:
                 final['fix_after']  = blocks[0].strip()
+
+        # postmortem What/Why/How 추출
+        if postmortem_mode:
+            final['_postmortem'] = self._extract_postmortem(final.get('text', ''))
 
         # 캐싱
         if cfg.cache_enabled and self._cache and issues and CacheEntry:
@@ -412,6 +709,39 @@ class AnalysisPipeline:
         return final
 
     # ── 헬퍼 ─────────────────────────────────────────────────
+
+    def _extract_postmortem(self, text: str) -> 'PostmortemDiagnosis':
+        """
+        AI 응답 텍스트에서 what/why/how 필드를 추출해 PostmortemDiagnosis 반환.
+        JSON 파싱 우선, 실패 시 텍스트 패턴 폴백.
+        """
+        import json as _j, re as _re
+        pm = PostmortemDiagnosis()
+
+        # 1차: JSON에서 직접 추출
+        try:
+            clean = _re.search(r'\{[\s\S]+\}', text)
+            if clean:
+                d = _j.loads(clean.group(0))
+                pm.what = d.get('what', '')
+                pm.why  = d.get('why',  '')
+                pm.how  = d.get('how',  '')
+                if pm.is_complete():
+                    return pm
+        except Exception:
+            pass
+
+        # 2차: 텍스트 패턴 폴백 (WHAT:, WHY:, HOW: 키워드)
+        for line in text.splitlines():
+            l = line.strip()
+            for prefix, attr in (('what', 'what'), ('why', 'why'), ('how', 'how'),
+                                  ('WHAT', 'what'), ('WHY',  'why'), ('HOW',  'how')):
+                if l.lower().startswith(prefix.lower() + ':') or \
+                   l.lower().startswith(f'"{prefix.lower()}"'):
+                    val = l.split(':', 1)[-1].strip().strip('"').strip(',')
+                    if val:
+                        setattr(pm, attr, val)
+        return pm
 
     def _stage(self, name: str, ok: bool, t: float,
                output: Any = None, skip_reason: str = '') -> StageResult:

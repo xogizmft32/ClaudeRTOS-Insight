@@ -112,12 +112,32 @@ Host (N100 PC)
   │         JSONDecoder.raw_decode()로 중첩 JSON 안전 파싱
   │         max_turns 소진 시 추가 요청 후 fallback 결정
   │
-  └─ [19] few_shot_injector.py   ★ v5.2.0 독립 AI 주입형 (Axis3)
-           host/ai/ 에 위치 (host/analysis/ 구버전과 별도)
-           Jaccard + CPU/Heap 버킷 + 태스크 수 기반 유사도
-           8개 내장 시드 사례, pickle DB 영속화
-           get_relevant() → (score, example) 튜플 반환
-           inject_to_context() → 유사도 점수 포함 출력
+  ├─ [19] few_shot_injector.py   ★ v5.2.0 독립 AI 주입형 (Axis3)
+  │        host/ai/ 에 위치 (host/analysis/ 구버전과 별도)
+  │        Jaccard + CPU/Heap 버킷 + 태스크 수 기반 유사도
+  │        8개 내장 시드 사례, pickle DB 영속화
+  │        get_relevant() → (score, example) 튜플 반환
+  │        inject_to_context() → 유사도 점수 포함 출력
+  │
+  ├─ [20] parallel_agent.py      ★ v5.5.0 Option B 병렬 멀티에이전트 앙상블
+  │        ParallelAgentRunner — n_agents를 스레드 풀로 병렬 실행
+  │        EnsembleResult — ensemble_diagnosis, agreement_score,
+  │          recommended_actions(빈도순), fix_code(가장 긴 코드)
+  │        pipeline_result= 파라미터로 Option D와 연동 가능
+  │
+  ├─ [21] misra_checker.py       ★ v5.5.0 Option E MISRA C:2012 1차 검사기
+  │        AI fix_code의 MISRA C:2012 위반을 패턴 기반으로 탐지
+  │        12개 규칙 (Mandatory 4 · Required 5 · Advisory 3)
+  │        ISR unsafe API 호출, 불변 조건, UB 초기화 등 감지
+  │        format_report() → Markdown 보고서, severity_counts() → 집계
+  │
+  └─ [22] tests/level2/          ★ v5.5.0 Level 2 pytest 검증 구조
+           conftest.py — 픽스처, with_timeout 데코레이터, 마커
+           test_P_parser.py — GROUP P: P-01~P-10 (Protocol/Parser)
+           test_A_ai.py    — GROUP A: A-01~A-15 (AI 모듈)
+           test_C_pipeline.py — GROUP C: C-01~C-10 (분석/파이프라인)
+           run_level2.py   — pytest 미설치 환경용 자체 실행기
+           실행: PYTHONPATH=host python3 tests/level2/run_level2.py
 ```
 
 ---
@@ -218,10 +238,10 @@ AI 컨텍스트 전달:
 ---
 
 ## 검증 결과
-*Validation Results — 30/30 Protocol*
+*Validation Results — 37/37 Protocol*
 
 ```
-전 과정 시뮬레이션 (19/19 PASS):
+전 과정 시뮬레이션 (37/37 PASS):
   설치 검증:              8/8 ✅
   Binary Protocol V4:     ✅ 132B 패킷
   ITM 수신 + 파싱:        ✅
@@ -232,7 +252,7 @@ AI 컨텍스트 전달:
   EventQueue:             ✅ Aging/RateLimit
   AI 컨텍스트:            ✅ ~111 tokens
   Semantic Cache:         ✅ put→get→persist
-  프로토콜 검증:          ✅ 20/20 PASS
+  프로토콜 검증:          ✅ 37/37 PASS
 ```
 
 ---

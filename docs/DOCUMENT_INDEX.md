@@ -1,4 +1,4 @@
-# 문서 인덱스 — ClaudeRTOS-Insight v5.4.0
+# 문서 인덱스 — ClaudeRTOS-Insight v5.5.0
 
 전체 **25개** 문서 (통합·정리 전 35개 → 25개).
 
@@ -81,7 +81,31 @@ docs/
 | [TESTING_GUIDE.md](06_testing/TESTING_GUIDE.md) | **테스트 시나리오** Fault Injection·Replay |
 | [TESTING_CHECKLIST.md](06_testing/TESTING_CHECKLIST.md) | **릴리즈 전 체크리스트** |
 | [TEST_ENVIRONMENT.md](06_testing/TEST_ENVIRONMENT.md) | **테스트 환경** 요구사항·재현성 |
-| [TEST_RESULT_REPORT.md](06_testing/TEST_RESULT_REPORT.md) | **30/30 Protocol** 검증 결과 |
+| [TEST_RESULT_REPORT.md](06_testing/TEST_RESULT_REPORT.md) | **37/37 Protocol** 검증 결과 |
+
+---
+
+## 🆕 v5.5.x 신규 파일
+
+| 파일 | 버전 | 내용 |
+|------|------|------|
+| `host/ai/parallel_agent.py` | v5.5.0 | **Option B** ParallelAgentRunner — 병렬 멀티에이전트 앙상블 |
+| `host/ai/misra_checker.py`  | v5.5.0 | **Option E** MISRAChecker — AI fix_code MISRA C:2012 1차 검사 (12규칙) |
+| `tests/level2/conftest.py`  | v5.5.0 | Level 2 pytest 픽스처·마커·타임아웃 설정 |
+| `tests/level2/test_P_parser.py` | v5.5.0 | GROUP P: Protocol/Parser 검증 P-01~P-10 |
+| `tests/level2/test_A_ai.py`     | v5.5.0 | GROUP A: AI 모듈 검증 A-01~A-15 |
+| `tests/level2/test_C_pipeline.py` | v5.5.0 | GROUP C: 분석/파이프라인 검증 C-01~C-10 |
+| `tests/level2/run_level2.py`    | v5.5.0 | pytest 미설치 환경용 자체 실행기 |
+
+### v5.5.x 주요 변경 모듈
+
+| 모듈 | 버전 | 변경 내용 |
+|------|------|-----------|
+| `host/ai/analysis_pipeline.py` | v5.5.0 | `PostmortemDiagnosis`, `PipelineResult.postmortem`, `to_agent_context()`, `_SYSTEM_POSTMORTEM` 추가 |
+| `host/ai/pipeline_config.py`   | v5.5.0 | `AIConfig.postmortem_mode: bool` 추가 |
+| `host/ai/agent_loop.py`        | v5.5.0 | `DiagnosticAgent.run(pipeline_result=...)` 파라미터 추가 |
+| `host/ai/rtos_debugger.py`     | v5.5.0 | `RTOSDebuggerV3.debug_with_agent()` 신규 — Pipeline→Agent 통합 실행 |
+| `host/ai/analysis_pipeline.py` | v5.4.3 | S4b 트리거 버그 수정 (`trust >= 0.0` → `trust < min_trust_to_retry`) |
 
 ---
 
@@ -89,7 +113,7 @@ docs/
 
 | 문서 | 내용 |
 |------|------|
-| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.4.0) |
+| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.5.0) |
 
 ---
 
@@ -121,4 +145,4 @@ docs/
 | 전체 아키텍처 | [SYSTEM_REVIEW](04_architecture/SYSTEM_REVIEW.md) |
 | 패턴 DB 추가 | [PATTERN_GUIDE](05_quality/PATTERN_GUIDE.md) |
 | 릴리즈 점검 | [TESTING_CHECKLIST](06_testing/TESTING_CHECKLIST.md) |
-| 30/30 결과 | [TEST_RESULT_REPORT](06_testing/TEST_RESULT_REPORT.md) |
+| 37/37 결과 | [TEST_RESULT_REPORT](06_testing/TEST_RESULT_REPORT.md) |

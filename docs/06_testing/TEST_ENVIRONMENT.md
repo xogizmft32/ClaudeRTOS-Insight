@@ -188,7 +188,7 @@ pip show anthropic | grep Version   # 0.40.0+
 
 # 3. 프로토콜 검증
 python3 examples/integrated_demo.py --validate
-# → 20/20 PASS
+# → 37/37 PASS
 
 # 4. 전 과정 시뮬레이션 (하드웨어 불필요)
 python3 -c "

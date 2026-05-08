@@ -1,10 +1,10 @@
 # FreeRTOS-AI 결합 디버깅 시스템 — 검증 테스트 결과 보고서
 # Validation Test Result Report — ClaudeRTOS-Insight
 
-> Formal test results for the 30/30 Protocol validation. Covers simulation-based and hardware-equivalent scenarios.
+> Formal test results for the 37/37 Protocol validation. Covers simulation-based and hardware-equivalent scenarios.
 
 **기준 문서**: `embedded_ai_debugging_test_procedure.md`  
-**테스트 버전**: ClaudeRTOS-Insight v5.1.2  
+**테스트 버전**: ClaudeRTOS-Insight v5.5.0  
 **수행 일자**: 2026-04-25  
 **테스트 환경**: Python 3.12 / Ubuntu 24.04 (하드웨어 없음, 시뮬레이션 대체)  
 
@@ -18,7 +18,7 @@
 
 | 구분 | 내용 |
 |------|------|
-| 대상 시스템 | FreeRTOS v10.x + ClaudeRTOS-Insight v5.1.2 |
+| 대상 시스템 | FreeRTOS v10.x + ClaudeRTOS-Insight v5.5.0 |
 | AI 모드 | Fallback (Rule-based) — API 키 미설정 환경 |
 | 파이프라인 | `PipelineConfig.offline()` |
 | 분석 엔진 | `AnalysisEngine` + `CorrelationEngine` + `ResourceGraph` + `TrendAnalyzer` |
@@ -296,8 +296,17 @@ API 키 설정 후 `PipelineConfig.deep()`으로 재실행 시 아래 항목을 
 cd ClaudeRTOS-Insight-v2.5.0
 python3 install.py --project /tmp/test_project --no-pip --yes
 
-# 전체 검증 실행 (20/20 Protocol)
-python3 examples/integrated_demo.py --validate --simulate-switch
+# 전체 검증 실행 (37/37 Protocol)
+python3 examples/integrated_demo.py --validate
+
+# Level 2 검증 (pytest 스타일)
+PYTHONPATH=host python3 tests/level2/run_level2.py          # 전체
+PYTHONPATH=host python3 tests/level2/run_level2.py -m A     # AI 모듈만
+PYTHONPATH=host python3 tests/level2/run_level2.py -m P,C   # Parser + Pipeline
+
+# pytest 설치 시
+# pytest tests/level2/ -v --timeout=5
+# pytest tests/level2/ -m "group_A" -v
 
 # 절차서 시나리오 직접 재현
 python3 << 'EOF'
@@ -319,5 +328,5 @@ EOF
 
 ---
 
-*본 보고서는 ClaudeRTOS-Insight v5.1.2 기준으로 작성됐습니다.*  
+*본 보고서는 ClaudeRTOS-Insight v5.5.0 기준으로 작성됐습니다.*  
 *실제 하드웨어 연결 후 §4 항목 재수행 및 결과 갱신이 필요합니다.*

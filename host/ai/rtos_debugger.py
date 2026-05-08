@@ -249,6 +249,9 @@ class RTOSDebuggerV3:
         """OS 스냅샷 + 이슈 → AI 분석."""
         # ── 7단계 파이프라인 모드 ───────────────────────────────
         if self._pipeline is not None:
+            # postmortem 모드면 파이프라인에 What/Why/How 3분리 활성화
+            if ai_mode == 'postmortem':
+                self._pipeline._config.ai.postmortem_mode = True
             _r = self._pipeline.run(
                 snap=snap, issues=issues,
                 timeline_events=timeline_events,
@@ -344,6 +347,86 @@ class RTOSDebuggerV3:
             return resp.to_dict()
         except Exception as _e:
             return {'fault_analysis': f'AI 비가용: {_e}', '_fallback': True}
+
+
+    def debug_with_agent(self,
+                         snap:            Dict,
+                         issues:          List[Dict],
+                         trends:          Optional[Dict] = None,
+                         timeline_events: Optional[List] = None,
+                         isr_stats:       Optional[Dict] = None,
+                         cpu_hz:          int            = 180_000_000,
+                         agent_max_turns: int            = 4,
+                         pipeline_config: 'Optional[PipelineConfig]' = None) -> Dict:
+        """
+        Option D: Pipeline 1차 분석 → DiagnosticAgent 심화 분석 통합 실행.
+
+        단계
+        ----
+        1. AnalysisPipeline (8단계) 실행 → PipelineResult (trust_score, issues, postmortem)
+        2. PipelineResult.to_agent_context() → Agent 초기 컨텍스트 주입
+        3. DiagnosticAgent 멀티턴 루프 → AgentResult (final_diagnosis, tool_calls)
+        4. 두 결과를 병합해 반환
+
+        반환 딕셔너리
+        -------------
+        pipeline  : PipelineResult.to_dict()
+        agent     : AgentResult 주요 필드
+        combined  : Pipeline 이슈 + Agent 진단 통합 요약
+        """
+        import logging as _lg
+        try:
+            from .agent_loop import DiagnosticAgent
+        except ImportError:
+            from ai.agent_loop import DiagnosticAgent
+        _log2 = _lg.getLogger(__name__)
+
+        # 1. Pipeline 실행
+        cfg = pipeline_config or PipelineConfig.default()
+        cfg.ai.postmortem_mode = True
+        pipeline = AnalysisPipeline(
+            provider=self._provider,
+            config=cfg,
+            cache=self._cache,
+        )
+        pipeline_result = pipeline.run(
+            snap=snap, issues=issues,
+            timeline_events=timeline_events,
+            trends=trends, isr_stats=isr_stats, cpu_hz=cpu_hz,
+        )
+        _log2.info("[debug_with_agent] Pipeline 완료 trust=%.2f", pipeline_result.trust_score)
+
+        # 2 & 3. Agent 심화 분석 (Pipeline 결과 주입)
+        agent = DiagnosticAgent(
+            provider=self._provider,
+            max_turns=agent_max_turns,
+        )
+        agent_result = agent.run(
+            snap=snap, issues=issues,
+            trends=trends, timeline=timeline_events,
+            pipeline_result=pipeline_result,
+        )
+        _log2.info("[debug_with_agent] Agent 완료 turns=%d", agent_result.turn_count)
+
+        # 4. 결과 병합
+        return {
+            'pipeline': pipeline_result.to_dict(),
+            'agent': {
+                'final_diagnosis':     agent_result.final_diagnosis,
+                'recommended_actions': agent_result.recommended_actions,
+                'fix_code':            agent_result.fix_code,
+                'turn_count':          agent_result.turn_count,
+                'tool_calls':          agent_result.tool_calls,
+                'total_ms':            agent_result.total_ms,
+            },
+            'combined': {
+                'issues':          pipeline_result.issues,
+                'trust_score':     pipeline_result.trust_score,
+                'postmortem':      pipeline_result.postmortem.to_dict()
+                                    if pipeline_result.postmortem else None,
+                'agent_diagnosis': agent_result.final_diagnosis,
+            },
+        }
 
     def debug_batch(self,
                     snap:            Dict,

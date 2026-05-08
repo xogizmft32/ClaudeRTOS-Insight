@@ -69,7 +69,7 @@ pip download -r host/requirements.txt -d offline_wheels/
 
 # 오프라인 환경에서 설치
 pip install --no-index --find-links=offline_wheels/ -r host/requirements.txt
-python3 examples/integrated_demo.py --validate   # 20/20 PASS 확인
+python3 examples/integrated_demo.py --validate   # 37/37 PASS 확인
 ```
 
 ### B: Docker 이미지 반입 / Method B: Docker Image Transfer
