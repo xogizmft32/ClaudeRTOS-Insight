@@ -215,3 +215,78 @@ def test_P10_max_tasks_16():
     issues = engine.analyze_snapshot(snap)
     dangerous = [i for i in issues if getattr(i, "severity", "") in ("Critical", "High")]
     assert len(dangerous) == 0, f"16-태스크 과부하 오탐: {[i.issue_type for i in dangerous]}"
+
+
+# ── P-11: BinaryParserV3.parse_bulk() — zero-copy 벌크 파싱 ──
+@_mark_P
+@with_timeout(5)
+def test_P11_parse_bulk_zero_copy():
+    import struct, zlib
+    from parsers.binary_parser import (
+        BinaryParserV3, MAGIC1, MAGIC2, PROTOCOL_VERSION,
+        HEADER_FMT, OS_FIXED_OVH, TASK_ENTRY_SZ, PTYPE_OS_SNAPSHOT,
+    )
+
+    def _pkt(seq, cpu=30, hf=5000):
+        ts = seq * 1_000_000
+        hdr = struct.pack(HEADER_FMT, MAGIC1, MAGIC2,
+                          PROTOCOL_VERSION, 0, ts, seq, PTYPE_OS_SNAPSHOT, 0)
+        pay = struct.pack('<IIIIIIBBBB',
+                          seq * 1000, seq, hf, hf - 100, 8192,
+                          seq * 1000, cpu, 1, 0, 0)
+        nm   = b'T0' + b'\x00' * 14
+        task = struct.pack('<BBBBHHl16s', 0, 2, 0, cpu, 200, 0, 0, nm)
+        body = hdr + pay + task
+        return body + struct.pack('<I', zlib.crc32(body) & 0xFFFFFFFF)
+
+    buf = b''.join(_pkt(i) for i in range(1, 5))
+    p   = BinaryParserV3()
+
+    # bytes 입력
+    r_b = p.parse_bulk(buf)
+    # memoryview 입력 (zero-copy)
+    r_mv = p.parse_bulk(memoryview(buf))
+
+    assert len(r_b)  == 4, f"bytes 입력 파싱 실패: {len(r_b)}"
+    assert len(r_mv) == 4, f"memoryview 입력 파싱 실패: {len(r_mv)}"
+    assert [x.sequence for x in r_b] == [1, 2, 3, 4], "시퀀스 오류"
+    assert p.get_stats().get('bulk_calls', 0) >= 2, "bulk_calls 통계 없음"
+
+    # max_packets 제한
+    r_lim = p.parse_bulk(buf, max_packets=2)
+    assert len(r_lim) == 2, f"max_packets 제한 실패: {len(r_lim)}"
+
+
+# ── P-12: TimeSyncManager — 오프셋 보정 ─────────────────────
+@_mark_P
+@with_timeout(5)
+def test_P12_time_sync_offset():
+    from parsers.time_sync import TimeSyncManager
+
+    sync = TimeSyncManager(n_samples=3)
+
+    # 동기화 전 → 원본 반환
+    assert sync.correct_us(1_000_000) == 1_000_000, "미동기 시 보정됨"
+    assert not sync.is_synced()
+
+    # 수동 설정
+    sync.sync_manual(offset_us=3_000_000, rtt_us=1200)
+    assert sync.is_synced()
+
+    # 보정 확인
+    corrected = sync.correct_us(10_000_000)
+    assert corrected == 13_000_000, f"오프셋 보정 실패: {corrected}"
+
+    # 스냅샷 보정
+    snap = {'timestamp_us': 5_000_000, 'cpu_usage': 40}
+    out  = sync.correct_snapshot(snap)
+    assert out['timestamp_us'] == 8_000_000
+    assert out.get('_time_synced') is True
+
+    info = sync.info()
+    assert info['offset_ms'] == 3000.0
+    assert info['rtt_us'] == 1200
+
+    # 리셋
+    sync.reset()
+    assert not sync.is_synced()

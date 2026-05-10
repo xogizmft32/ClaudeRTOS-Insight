@@ -265,3 +265,48 @@ def test_C10_end_to_end_pipeline():
     md = gen.generate()
     assert isinstance(md, str) and len(md) > 100 and '##' in md, \
         f"보고서 품질 불량: len={len(md)}"
+
+
+# ── C-11: SnapshotQueue — 역압 처리 + 드롭 정책 ──────────
+@_mark_C
+@with_timeout(5)
+def test_C11_snapshot_queue_backpressure():
+    from analysis.snapshot_queue import SnapshotQueue
+
+    snap_tmpl = {
+        'cpu_usage': 90, '_parser_stats': {}, 'sequence': 0,
+        'timestamp_us': 0, 'snapshot_count': 0, 'uptime_ms': 0,
+        'heap': {'free': 150, 'used_pct': 98, 'total': 8192, 'min': 100},
+        'tasks': [{'task_id': 0, 'name': 'T', 'priority': 5,
+                   'state': 0, 'state_name': 'Running',
+                   'cpu_pct': 90, 'stack_hwm': 12, 'runtime_us': 0}],
+    }
+    issues = [{'type': 'heap_exhaustion', 'severity': 'Critical'}]
+
+    # oldest 정책
+    q = SnapshotQueue(max_depth=4, drop_policy='oldest')
+    for i in range(8):
+        q.push({**snap_tmpl, 'sequence': i}, issues)
+
+    st = q.stats()
+    assert q.qsize() == 4,       f"큐 깊이 오류: {q.qsize()}"
+    assert st.dropped_total == 4, f"드롭 수 오류: {st.dropped_total}"
+    assert st.pushed_total  == 8
+
+    item = q.pop(timeout=0.0)
+    assert item is not None, "pop 실패"
+
+    # 비어 있을 때 논블로킹 → None
+    q.clear()
+    assert q.pop(timeout=0.0) is None
+
+    # lowest_severity 정책
+    q2 = SnapshotQueue(max_depth=2, drop_policy='lowest_severity')
+    q2.push(snap_tmpl, [{'type': 'low_stack', 'severity': 'Low'}])
+    q2.push(snap_tmpl, [{'type': 'heap_exhaustion', 'severity': 'Critical'}])
+    q2.push(snap_tmpl, [{'type': 'cpu_overload', 'severity': 'High'}])
+    assert q2.qsize() == 2, f"lowest_severity 큐 깊이 오류: {q2.qsize()}"
+
+    # stats.to_dict()
+    d = st.to_dict()
+    assert 'drop_rate_pct' in d and 'drop_reason_counts' in d

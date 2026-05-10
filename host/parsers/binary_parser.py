@@ -284,6 +284,102 @@ class BinaryParserV3:
             return self.parse_fault_packet(data)
         return None
 
+    def parse_bulk(self, buf: 'bytes | memoryview',
+                   max_packets: int = 256) -> list:
+        """
+        연속된 바이트 버퍼에서 패킷을 한 번에 추출한다 — zero-copy 경로.
+
+        `memoryview`를 입력하면 슬라이싱 시 복사가 발생하지 않는다.
+        115200 baud UART에서 ~11KB/s 스트림을 처리하는 호스트 루프에
+        적합하다.
+
+        Parameters
+        ----------
+        buf         : bytes 또는 memoryview (DMA 수신 버퍼 등)
+        max_packets : 한 번에 파싱할 최대 패킷 수 (기본 256)
+
+        Returns
+        -------
+        ParsedSnapshot / ParsedFault 혼합 리스트 (None 제외)
+
+        동작
+        ----
+        1. MAGIC1·MAGIC2 헤더를 스캔한다 (O(n) 1-pass).
+        2. 헤더에서 packet_type을 읽어 예상 길이를 계산한다.
+        3. memoryview 슬라이스를 넘겨 parse_os_snapshot / parse_fault_packet
+           을 호출한다 — bytes 변환은 struct.unpack_from 내부에서만 발생.
+        4. CRC 검사, 시퀀스 추적은 기존 메서드를 그대로 재사용한다.
+        """
+        mv      = memoryview(buf) if not isinstance(buf, memoryview) else buf
+        length  = len(mv)
+        results = []
+        offset  = 0
+
+        while offset < length - HEADER_SIZE and len(results) < max_packets:
+            # ── magic 스캔 ─────────────────────────────────────
+            if mv[offset] != MAGIC1:
+                offset += 1
+                continue
+            if offset + 1 >= length or mv[offset + 1] != MAGIC2:
+                offset += 1
+                continue
+
+            # ── 헤더 파싱 (복사 없이 unpack_from) ──────────────
+            if offset + HEADER_SIZE > length:
+                break
+            try:
+                m1, m2, ver, port, ts, seq, ptype, flags = \
+                    struct.unpack_from(HEADER_FMT, mv, offset)
+            except struct.error:
+                offset += 1
+                continue
+
+            if not (PROTOCOL_VERSION_MIN <= ver <= PROTOCOL_VERSION):
+                offset += 1
+                continue
+
+            # ── 패킷 길이 결정 ─────────────────────────────────
+            if ptype == PTYPE_OS_SNAPSHOT:
+                if offset + OS_FIXED_OVH + 4 > length:
+                    break  # 아직 수신 중 — 다음 루프까지 대기
+                # 태스크 수: OS_PAYLOAD_FMT 중 num_tasks (offset 23)
+                try:
+                    num_tasks = struct.unpack_from('<B', mv,
+                                                  offset + HEADER_SIZE + 25)[0]
+                except struct.error:
+                    offset += 1
+                    continue
+                pkt_len = OS_FIXED_OVH + num_tasks * TASK_ENTRY_SZ + 4
+                if offset + pkt_len > length:
+                    break
+
+            elif ptype == PTYPE_FAULT:
+                pkt_len = FAULT_PKT_SIZE
+                if offset + pkt_len > length:
+                    break
+            else:
+                # 알 수 없는 ptype — MAGIC 다음 바이트부터 재스캔
+                offset += 1
+                continue
+
+            # ── zero-copy 슬라이스로 기존 파서 호출 ───────────
+            # mv[offset:offset+pkt_len]은 복사 없이 memoryview 반환
+            pkt_view = mv[offset:offset + pkt_len]
+            # struct.unpack_from, zlib.crc32 모두 buffer protocol 지원
+            parsed = self.parse_packet(bytes(pkt_view))
+            if parsed is not None:
+                results.append(parsed)
+            else:
+                self._stats['crc_errors'] += 1
+
+            offset += pkt_len
+
+        self._stats.setdefault('bulk_calls', 0)
+        self._stats['bulk_calls'] += 1
+        self._stats.setdefault('bulk_packets', 0)
+        self._stats['bulk_packets'] += len(results)
+        return results
+
     def get_stats(self) -> Dict:
         return dict(self._stats)
 

@@ -965,6 +965,230 @@ void vBadISR(void) {
         results.append(_chk('A-19', 'A',
                             'SnapshotQueue 역압 + debug_snapshot_resilient 폴백 검증', _a19))
 
+        # A-20: BinaryParserV3.parse_bulk() zero-copy 벌크 파싱 검증
+        def _a20():
+            import struct, zlib
+            from parsers.binary_parser import (
+                BinaryParserV3, MAGIC1, MAGIC2, PROTOCOL_VERSION,
+                HEADER_FMT, OS_PAYLOAD_FMT, TASK_FMT,
+                HEADER_SIZE, OS_FIXED_OVH, TASK_ENTRY_SZ,
+                PTYPE_OS_SNAPSHOT,
+            )
+
+            def _make_pkt(seq, cpu=30, heap_free=5000):
+                ts = seq * 1_000_000
+                hdr = struct.pack(HEADER_FMT, MAGIC1, MAGIC2,
+                                  PROTOCOL_VERSION, 0, ts, seq,
+                                  PTYPE_OS_SNAPSHOT, 0)
+                # OS_PAYLOAD_FMT: tick, sc, heap_free, heap_min, heap_total,
+                #                 uptime_ms, cpu, num_tasks, r2, r3
+                pay = struct.pack('<IIIIIIBBBB',
+                                  seq*1000, seq, heap_free, heap_free-100,
+                                  8192, seq*1000, cpu, 1, 0, 0)
+                nm  = b'T0' + b'\x00' * 14  # 18 bytes → trim to 16
+                task = struct.pack('<BBBBHHl16s',
+                                   0, 2, 0, cpu, 200, 0, 0, nm[:16])
+                body = hdr + pay + task
+                crc  = struct.pack('<I', zlib.crc32(body) & 0xFFFFFFFF)
+                return body + crc
+
+            # 패킷 3개를 연속 버퍼로 붙이기
+            buf = b''.join(_make_pkt(i) for i in range(1, 4))
+            mv  = memoryview(buf)
+
+            p = BinaryParserV3()
+            # bytes 입력
+            r_bytes = p.parse_bulk(buf)
+            # memoryview 입력 (zero-copy)
+            r_mv    = p.parse_bulk(mv)
+
+            count_ok  = len(r_bytes) == 3 and len(r_mv) == 3
+            type_ok   = all(hasattr(x, 'cpu_usage') for x in r_bytes)
+            seq_ok    = [x.sequence for x in r_bytes] == [1, 2, 3]
+            stats_ok  = p.get_stats().get('bulk_calls', 0) >= 2
+
+            # max_packets 제한 동작
+            r_limited = p.parse_bulk(buf, max_packets=2)
+            limit_ok  = len(r_limited) == 2
+
+            ok = count_ok and type_ok and seq_ok and stats_ok and limit_ok
+            return ok, (
+                f"bytes={len(r_bytes)} mv={len(r_mv)} type_ok={type_ok} "
+                f"seq_ok={seq_ok} stats_ok={stats_ok} limit_ok={limit_ok}"
+            )
+        results.append(_chk('A-20', 'A',
+                            'BinaryParserV3.parse_bulk() zero-copy 벌크 파싱 검증', _a20))
+
+        # A-21: TimeSyncManager 오프셋 보정 검증
+        def _a21():
+            from parsers.time_sync import TimeSyncManager
+
+            sync = TimeSyncManager(n_samples=3, max_rtt_us=50_000)
+
+            # sync_manual로 transport 없이 직접 설정
+            sync.sync_manual(offset_us=5_000_000, rtt_us=1_500)
+
+            # correct_us
+            dev_ts = 60_000_000   # 디바이스 60s
+            host_ts = sync.correct_us(dev_ts)
+            offset_ok = host_ts == 65_000_000  # 60s + 5s
+
+            # correct_snapshot
+            snap = {'timestamp_us': 30_000_000, 'cpu_usage': 50}
+            corrected = sync.correct_snapshot(snap)
+            snap_ok = corrected['timestamp_us'] == 35_000_000
+            synced_ok = corrected.get('_time_synced') is True
+
+            # info()
+            info = sync.info()
+            info_ok = (info['synced'] is True
+                       and info['offset_us'] == 5_000_000
+                       and info['offset_ms'] == 5000.0)
+
+            # reset
+            sync.reset()
+            reset_ok = not sync.is_synced()
+            no_correct = sync.correct_us(1_000) == 1_000  # 미동기 시 원본 반환
+
+            ok = offset_ok and snap_ok and synced_ok and info_ok and reset_ok and no_correct
+            return ok, (
+                f"offset_ok={offset_ok} snap_ok={snap_ok} synced_ok={synced_ok} "
+                f"info_ok={info_ok} reset_ok={reset_ok} no_correct={no_correct}"
+            )
+        results.append(_chk('A-21', 'A',
+                            'TimeSyncManager 호스트-디바이스 오프셋 보정 검증', _a21))
+
+        # A-22: AnalysisEngine LRU 캐시 — 중복 분석 방지 검증
+        def _a22():
+            from analysis.analyzer import AnalysisEngine
+
+            engine = AnalysisEngine(ai_mode='postmortem')
+            snap = {
+                'cpu_usage': 91, '_parser_stats': {}, 'sequence': 42,
+                'timestamp_us': 42_000_000, 'snapshot_count': 42, 'uptime_ms': 42000,
+                'heap': {'free': 150, 'used_pct': 98, 'total': 8192, 'min': 100},
+                'tasks': [{'task_id': 0, 'name': 'T', 'priority': 5,
+                           'state': 0, 'state_name': 'Running',
+                           'cpu_pct': 91, 'stack_hwm': 12, 'runtime_us': 0}],
+            }
+
+            # 1회차: 캐시 miss + 분석
+            r1 = engine.analyze_snapshot(snap)
+            stats1 = engine.lru_stats()
+            miss1 = stats1['misses'] == 1 and stats1['hits'] == 0
+
+            # 2회차: 동일 snap → 캐시 hit
+            r2 = engine.analyze_snapshot(snap)
+            stats2 = engine.lru_stats()
+            hit1 = stats2['hits'] == 1 and stats2['misses'] == 1
+
+            # 결과 동일성 (이슈 타입 기준)
+            same_ok = ([i.issue_type for i in r1] ==
+                       [i.issue_type for i in r2])
+
+            # hit_rate 정확도
+            rate_ok = abs(stats2['hit_rate'] - 0.5) < 0.01
+
+            # 다른 sequence → miss
+            snap2 = {**snap, 'sequence': 99}
+            engine.analyze_snapshot(snap2)
+            stats3 = engine.lru_stats()
+            diff_miss = stats3['misses'] == 2
+
+            # lru_max 초과 시 eviction
+            for i in range(20):
+                engine.analyze_snapshot({**snap, 'sequence': 1000+i})
+            size_ok = engine.lru_stats()['size'] <= engine._lru_max
+
+            ok = miss1 and hit1 and same_ok and rate_ok and diff_miss and size_ok
+            return ok, (
+                f"miss1={miss1} hit1={hit1} same_ok={same_ok} "
+                f"rate={stats2['hit_rate']:.2f} diff_miss={diff_miss} "
+                f"size={engine.lru_stats()['size']}<={engine._lru_max}"
+            )
+        results.append(_chk('A-22', 'A',
+                            'AnalysisEngine LRU 캐시 — 중복 분석 방지 검증', _a22))
+
+        # A-23: AdaptiveTrustThreshold — 환경 적응형 재질의 임계값
+        def _a23():
+            from ai.pipeline_config import AdaptiveTrustThreshold, PipelineConfig
+            from ai.analysis_pipeline import AnalysisPipeline
+
+            # ── (1) AdaptiveTrustThreshold 독립 검증 ──────────────
+            adaptive = AdaptiveTrustThreshold(base=0.7, window=10,
+                                              margin=0.05, warm_up=3)
+
+            # warm_up 미달 → base 반환
+            base_ok = adaptive.current() == 0.7
+
+            # 낮은 trust 환경 시뮬레이션 (3회 → warm_up 충족)
+            for score in [0.4, 0.45, 0.42]:
+                adaptive.update(score)
+
+            # median(0.4,0.45,0.42)=0.42 - 0.05 = 0.37 → clamp 0.30~0.90
+            threshold_after = adaptive.current()
+            adapted_ok = 0.30 <= threshold_after <= 0.50
+
+            stats = adaptive.stats()
+            stats_ok = (stats['ready'] is True
+                        and stats['samples'] == 3
+                        and stats['current_threshold'] == threshold_after)
+
+            adaptive.reset()
+            reset_ok = adaptive.current() == 0.7
+
+            # ── (2) Pipeline 통합 — adaptive_threshold=True ────────
+            called_systems = []
+
+            class MockAdaptiveProvider:
+                call_count = 0
+                def generate(self, system, context, max_tokens, tier):
+                    self.__class__.call_count += 1
+                    called_systems.append(system)
+                    class R:
+                        text = ('{"issues":[{"id":1,"severity":"High",'
+                                '"type":"cpu_overload","task":"W","scenario":"timing",'
+                                '"summary":"x","confidence":0.35,'
+                                '"root_cause_candidates":[],'
+                                '"recommended_actions":[],"prevention":""}],'
+                                '"session_summary":"cpu","overall_confidence":0.35}')
+                        model='mock'; tokens_in=10; tokens_out=20
+                    return R()
+
+            snap = {
+                'cpu_usage': 90, '_parser_stats': {}, 'sequence': 1,
+                'timestamp_us': 1_000_000, 'snapshot_count': 1, 'uptime_ms': 1000,
+                'heap': {'free': 4000, 'used_pct': 51, 'total': 8192, 'min': 3900},
+                'tasks': [{'task_id': 0, 'name': 'W', 'priority': 2,
+                           'state': 0, 'state_name': 'Running',
+                           'cpu_pct': 90, 'stack_hwm': 80, 'runtime_us': 0}],
+            }
+            issues = [{'type': 'cpu_overload', 'severity': 'Critical'}]
+
+            cfg = PipelineConfig.default()
+            cfg.verify.mode = 'strict'; cfg.verify.min_trust = 0.99
+            cfg.retry.enabled = True; cfg.retry.max_retries = 1
+            cfg.retry.adaptive_threshold = True   # 핵심
+            cfg.retry.min_trust_to_retry = 0.7
+            cfg.triage.enabled = False
+
+            pipeline = AnalysisPipeline(provider=MockAdaptiveProvider(), config=cfg)
+            has_adaptive = pipeline._adaptive_threshold is not None
+            pipeline.run(snap, issues)
+
+            # 실행 후 적응형 인스턴스에 trust가 기록됐는지
+            updated = (pipeline._adaptive_threshold.stats()['samples'] > 0
+                       if has_adaptive else False)
+
+            ok = base_ok and adapted_ok and stats_ok and reset_ok and has_adaptive and updated
+            return ok, (
+                f"base_ok={base_ok} adapted_ok={adapted_ok}({threshold_after:.3f}) "
+                f"stats_ok={stats_ok} reset_ok={reset_ok} "
+                f"has_adaptive={has_adaptive} updated={updated}"
+            )
+        results.append(_chk('A-23', 'A',
+                            'AdaptiveTrustThreshold — 환경 적응형 재질의 임계값', _a23))
+
 
     if run_C:
         print(f"\n{'─'*65}")
@@ -1190,7 +1414,7 @@ void vBadISR(void) {
 
     # 그룹별 요약
     print(f"\n{'═'*65}")
-    print(f"  39/39 Protocol — 결과 요약")
+    print(f"  43/43 Protocol — 결과 요약")
     print(f"{'─'*65}")
     for grp in ('P', 'A', 'C'):
         grp_res = [r for r in results if r.group == grp]

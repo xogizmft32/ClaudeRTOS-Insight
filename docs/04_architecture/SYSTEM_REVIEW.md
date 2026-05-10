@@ -131,13 +131,27 @@ Host (N100 PC)
   │        ISR unsafe API 호출, 불변 조건, UB 초기화 등 감지
   │        format_report() → Markdown 보고서, severity_counts() → 집계
   │
-  └─ [22] tests/level2/          ★ v5.5.0 Level 2 pytest 검증 구조
-           conftest.py — 픽스처, with_timeout 데코레이터, 마커
-           test_P_parser.py — GROUP P: P-01~P-10 (Protocol/Parser)
-           test_A_ai.py    — GROUP A: A-01~A-15 (AI 모듈)
-           test_C_pipeline.py — GROUP C: C-01~C-10 (분석/파이프라인)
-           run_level2.py   — pytest 미설치 환경용 자체 실행기
-           실행: PYTHONPATH=host python3 tests/level2/run_level2.py
+  ├─ [22] tests/level2/          ★ v5.5.0+ Level 2 pytest 검증 구조
+  │        conftest.py — 픽스처, with_timeout 데코레이터, 마커
+  │        test_P_parser.py — GROUP P: P-01~P-12 (Protocol/Parser)
+  │        test_A_ai.py    — GROUP A: A-01~A-17 (AI 모듈)
+  │        test_C_pipeline.py — GROUP C: C-01~C-11 (분석/파이프라인)
+  │        run_level2.py   — pytest 미설치 자체 실행기 (40/40 PASS)
+  │
+  ├─ [23] analysis/snapshot_queue.py ★ v5.5.1 역압 처리 우선순위 큐
+  │        SnapshotQueue — max_depth 초과 시 드롭 정책 적용
+  │        oldest / lowest_severity / duplicate 3가지 정책
+  │        QueueStats — pushed/popped/dropped/drop_rate_pct
+  │
+  ├─ [24] parsers/time_sync.py     ★ v5.6.0 호스트-디바이스 시간 동기화
+  │        TimeSyncManager — RTT 중앙값 기반 오프셋 보정
+  │        sync(transport) / sync_manual(offset_us) / correct_snapshot()
+  │        드리프트 제거로 TrendAnalyzer 슬로프 정확도 향상
+  │
+  └─ [25] ai/pipeline_config.py    ★ v5.6.1 AdaptiveTrustThreshold
+           UART 노이즈 환경에서 trust_score 이동 중앙값으로 임계값 자동 조정
+           불필요한 S4b 재질의 폭주 억제 → 최악 10s → 환경 적응
+           RetryConfig.adaptive_threshold=True 로 활성화
 ```
 
 ---

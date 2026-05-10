@@ -1,7 +1,7 @@
 # FreeRTOS-AI 결합 디버깅 시스템 — 검증 테스트 결과 보고서
 # Validation Test Result Report — ClaudeRTOS-Insight
 
-> Formal test results for the 37/37 Protocol validation. Covers simulation-based and hardware-equivalent scenarios.
+> Formal test results for the 43/43 Protocol validation. Covers simulation-based and hardware-equivalent scenarios.
 
 **기준 문서**: `embedded_ai_debugging_test_procedure.md`  
 **테스트 버전**: ClaudeRTOS-Insight v5.5.0  
@@ -296,7 +296,7 @@ API 키 설정 후 `PipelineConfig.deep()`으로 재실행 시 아래 항목을 
 cd ClaudeRTOS-Insight-v2.5.0
 python3 install.py --project /tmp/test_project --no-pip --yes
 
-# 전체 검증 실행 (37/37 Protocol)
+# 전체 검증 실행 (43/43 Protocol)
 python3 examples/integrated_demo.py --validate
 
 # Level 2 검증 (pytest 스타일)

@@ -1,4 +1,4 @@
-# 문서 인덱스 — ClaudeRTOS-Insight v5.5.0
+# 문서 인덱스 — ClaudeRTOS-Insight v5.6.1
 
 전체 **25개** 문서 (통합·정리 전 35개 → 25개).
 
@@ -91,6 +91,9 @@ docs/
 |------|------|------|
 | `host/ai/parallel_agent.py` | v5.5.0 | **Option B** ParallelAgentRunner — 병렬 멀티에이전트 앙상블 |
 | `host/ai/misra_checker.py`  | v5.5.0 | **Option E** MISRAChecker — AI fix_code MISRA C:2012 1차 검사 (12규칙) |
+| `host/analysis/snapshot_queue.py` | v5.5.1 | SnapshotQueue — 역압 처리 우선순위 큐 (oldest/severity/duplicate 드롭 정책) |
+| `host/parsers/time_sync.py` | v5.6.0 | TimeSyncManager — 호스트-디바이스 타임스탬프 드리프트 보정 |
+| `host/ai/pipeline_config.py` (확장) | v5.6.1 | `AdaptiveTrustThreshold` — 이동 중앙값 기반 재질의 임계값 자동 조정 |
 | `tests/level2/conftest.py`  | v5.5.0 | Level 2 pytest 픽스처·마커·타임아웃 설정 |
 | `tests/level2/test_P_parser.py` | v5.5.0 | GROUP P: Protocol/Parser 검증 P-01~P-10 |
 | `tests/level2/test_A_ai.py`     | v5.5.0 | GROUP A: AI 모듈 검증 A-01~A-15 |
@@ -113,7 +116,7 @@ docs/
 
 | 문서 | 내용 |
 |------|------|
-| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.5.0) |
+| [../CHANGELOG.md](../CHANGELOG.md) | 전체 버전 이력 (v2.3 → v5.6.1) |
 
 ---
 

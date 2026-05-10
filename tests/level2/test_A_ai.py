@@ -345,3 +345,65 @@ def test_A15_pipeline_agent_integration():
     DiagnosticAgent(provider=MockAgentP(), max_turns=1).run(snap, issues, pipeline_result=pr)
     assert len(injected) > 0, "Agent 미호출"
     assert "Pipeline 1차 분석 결과" in injected[0], "Pipeline 베이스라인 미주입"
+
+
+# ── A-16: AdaptiveTrustThreshold — 독립 검증 ──────────────
+@_mark_A
+@with_timeout(5)
+def test_A16_adaptive_trust_threshold():
+    from ai.pipeline_config import AdaptiveTrustThreshold
+
+    at = AdaptiveTrustThreshold(base=0.7, window=10, margin=0.05, warm_up=3)
+
+    # warm_up 미달 → base
+    assert at.current() == 0.7, "warm_up 미달 시 base 아님"
+
+    # 낮은 환경 학습
+    for s in [0.4, 0.45, 0.42]:
+        at.update(s)
+
+    threshold = at.current()
+    assert 0.30 <= threshold <= 0.50, f"적응 임계값 범위 벗어남: {threshold}"
+
+    stats = at.stats()
+    assert stats['ready'] is True
+    assert stats['samples'] == 3
+    assert stats['current_threshold'] == threshold
+
+    at.reset()
+    assert at.current() == 0.7, "리셋 후 base 복귀 실패"
+
+
+# ── A-17: AnalysisEngine LRU 캐시 — 독립 검증 ────────────
+@_mark_A
+@with_timeout(5)
+def test_A17_analysis_engine_lru_cache():
+    from analysis.analyzer import AnalysisEngine
+
+    engine = AnalysisEngine(ai_mode='postmortem')
+    snap = {
+        'cpu_usage': 91, '_parser_stats': {}, 'sequence': 99,
+        'timestamp_us': 99_000_000, 'snapshot_count': 99, 'uptime_ms': 99000,
+        'heap': {'free': 150, 'used_pct': 98, 'total': 8192, 'min': 100},
+        'tasks': [{'task_id': 0, 'name': 'T', 'priority': 5,
+                   'state': 0, 'state_name': 'Running',
+                   'cpu_pct': 91, 'stack_hwm': 12, 'runtime_us': 0}],
+    }
+
+    r1 = engine.analyze_snapshot(snap)   # miss
+    r2 = engine.analyze_snapshot(snap)   # hit
+
+    st = engine.lru_stats()
+    assert st['hits'] == 1,   f"cache hit 없음: hits={st['hits']}"
+    assert st['misses'] == 1, f"cache miss 없음: misses={st['misses']}"
+    assert st['hit_rate'] == 0.5
+    assert [i.issue_type for i in r1] == [i.issue_type for i in r2]
+
+    # 다른 snap → miss 추가
+    engine.analyze_snapshot({**snap, 'sequence': 100})
+    assert engine.lru_stats()['misses'] == 2
+
+    # LRU max 초과 eviction
+    for i in range(20):
+        engine.analyze_snapshot({**snap, 'sequence': 200 + i})
+    assert engine.lru_stats()['size'] <= engine._lru_max

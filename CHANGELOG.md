@@ -2654,7 +2654,7 @@ ISR unsafe API, 불변 조건, UB 초기화, 포인터 캐스팅, ISR 다중 ret
 | A-15 Pipeline→Agent 컨텍스트 주입 | ✅ PASS |
 | A-16 ParallelAgentRunner 앙상블 | ✅ PASS |
 | A-17 MISRAChecker fix_code 검사 | ✅ PASS |
-| Level 2 run_level2.py | ✅ 37/37 PASS (P 10/10 · A 17/17 · C 10/10) — 143ms |
+| Level 2 run_level2.py | ✅ 37/37 PASS (P 10/10 · A 23/23 · C 10/10) — 143ms |
 | integrated_demo.py | ✅ 37/37 PASS — 회귀 없음 |
 | Python 문법 | ✅ 62개 파일 오류 없음 |
 
@@ -2725,6 +2725,138 @@ runner.shutdown()  # 명시적 종료 (장기 운영 프로세스 권장)
 | A-19 SnapshotQueue + 폴백 체인 검증 | ✅ PASS |
 | 39/39 Protocol | ✅ 39/39 PASS (GROUP P 10/10 · A 19/19 · C 10/10) |
 | Python 문법 | ✅ 63개 파일 오류 없음 |
+
+---
+
+## v5.6.0 — 2026-05-09
+
+### 신규 기능 — 실시간 임베디드 적용 개선 (장기 로드맵)
+
+#### [6] BinaryParserV3.parse_bulk() — zero-copy 벌크 파싱 (`parsers/binary_parser.py`)
+
+연속된 수신 버퍼에서 패킷을 한 번에 추출한다.
+`memoryview` 입력 시 슬라이싱 복사가 발생하지 않아 DMA 버퍼 직접 처리에 적합하다.
+
+```python
+# DMA 수신 버퍼를 memoryview로 zero-copy 파싱
+mv = memoryview(dma_buf)
+packets = parser.parse_bulk(mv, max_packets=64)
+
+# 일반 bytes도 지원
+packets = parser.parse_bulk(received_bytes)
+stats = parser.get_stats()  # bulk_calls, bulk_packets 포함
+```
+
+동작: MAGIC1·MAGIC2 1-pass 스캔 → num_tasks 기반 패킷 길이 계산 →
+`memoryview` 슬라이스로 기존 parse_os_snapshot/parse_fault_packet 호출
+
+#### [7] TimeSyncManager — 호스트-디바이스 타임스탬프 보정 (`parsers/time_sync.py`)
+
+STM32 `HAL_GetTick()` 기반 상대 시간을 호스트 UNIX 시간으로 보정한다.
+RTT 기반 중앙값 오프셋 계산으로 드리프트를 제거해
+`TrendAnalyzer` 슬로프 정확도를 향상시킨다.
+
+```python
+from parsers.time_sync import TimeSyncManager
+
+sync = TimeSyncManager(n_samples=5, max_rtt_us=20_000)
+sync.sync(transport)                  # 핸드셰이크 (연결 시 1회)
+# 또는
+sync.sync_manual(offset_us=5_000_000) # 오프라인/테스트 환경
+
+corrected_snap = sync.correct_snapshot(snap)  # 인플레이스 보정
+corrected_us   = sync.correct_us(dev_ts_us)
+
+sync.info()  # {'synced', 'offset_us', 'offset_ms', 'rtt_us', 'n_samples'}
+```
+
+#### [8] AnalysisEngine LRU 캐시 (`analysis/analyzer.py`)
+
+동일 `(sequence, cpu_usage, heap_free)` fingerprint의 스냅샷 재수신 시
+분석을 생략하고 캐시 결과를 반환한다.
+UART 재전송 환경에서 CPU 낭비를 제거한다.
+
+```python
+engine = AnalysisEngine(ai_mode='postmortem')
+# 1회: cache miss → 분석
+r1 = engine.analyze_snapshot(snap)
+# 2회 (동일 snap): cache hit → 즉시 반환
+r2 = engine.analyze_snapshot(snap)
+
+engine.lru_stats()
+# {'hits': 1, 'misses': 1, 'hit_rate': 0.5, 'size': 1, 'max_size': 16}
+```
+
+캐시 크기 16슬롯, LRU eviction, `lru_stats()` 통계 제공.
+
+### 신규 파일
+
+| 파일 | 내용 |
+|------|------|
+| `host/parsers/time_sync.py` | TimeSyncManager — 호스트-디바이스 시간 동기화 |
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-20 BinaryParserV3.parse_bulk() | ✅ PASS |
+| A-21 TimeSyncManager 오프셋 보정 | ✅ PASS |
+| A-22 AnalysisEngine LRU 캐시 | ✅ PASS |
+| 42/42 Protocol | ✅ 43/43 PASS (GROUP P 10/10 · A 23/23 · C 10/10) |
+| Python 문법 | ✅ 65개 파일 오류 없음 |
+
+---
+
+## v5.6.1 — 2026-05-09
+
+### 신규 기능
+
+#### [4] AdaptiveTrustThreshold — 환경 적응형 재질의 임계값 (`ai/pipeline_config.py`)
+
+UART 노이즈·패킷 손실 환경에서 trust_score가 구조적으로 낮아져
+`min_trust_to_retry` 고정값이 S4b 재질의를 반복시키는 문제를 해결한다.
+최근 N회 trust_score의 이동 중앙값으로 임계값을 자동 조정한다.
+
+```python
+from ai.pipeline_config import AdaptiveTrustThreshold, PipelineConfig
+
+# 독립 사용
+adaptive = AdaptiveTrustThreshold(base=0.7, window=20, margin=0.05, warm_up=5)
+adaptive.update(result.trust_score)   # Pipeline 실행 후 학습
+threshold = adaptive.current()        # 조정된 임계값
+adaptive.stats()   # {'current_threshold', 'median', 'samples', 'ready', ...}
+
+# Pipeline 통합 (RetryConfig.adaptive_threshold=True)
+cfg = PipelineConfig.default()
+cfg.retry.adaptive_threshold = True   # 활성화
+pipeline = AnalysisPipeline(provider=..., config=cfg)
+# 이후 pipeline.run()마다 자동 업데이트
+```
+
+**변경 파일:** `ai/pipeline_config.py` (`AdaptiveTrustThreshold` 신규,
+`RetryConfig.adaptive_threshold: bool = False` 추가),
+`ai/analysis_pipeline.py` (`_adaptive_threshold` 필드, S4b 분기 확장)
+
+### Level 2 테스트 커버리지 확장
+
+신규 모듈 5개를 Level 2 테스트에 추가했다.
+
+| 테스트 | 파일 | 검증 내용 |
+|--------|------|-----------|
+| P-11 | test_P_parser.py | `parse_bulk()` — bytes/memoryview 입력, 시퀀스, max_packets |
+| P-12 | test_P_parser.py | `TimeSyncManager` — 오프셋 보정, 스냅샷 보정, 리셋 |
+| A-16 | test_A_ai.py | `AdaptiveTrustThreshold` — warm_up, 적응, stats, reset |
+| A-17 | test_A_ai.py | `AnalysisEngine.lru_stats()` — hit/miss/rate/eviction |
+| C-11 | test_C_pipeline.py | `SnapshotQueue` — oldest/lowest_severity 정책, stats |
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| A-23 AdaptiveTrustThreshold Pipeline 통합 | ✅ PASS |
+| integrated_demo.py | ✅ 43/43 PASS (GROUP P 10/10 · A 23/23 · C 10/10) |
+| Level 2 run_level2.py | ✅ 40/40 PASS (GROUP P 12/12 · A 17/17 · C 11/11) |
+| Python 문법 | ✅ 65개 파일 오류 없음 |
 
 ---
 

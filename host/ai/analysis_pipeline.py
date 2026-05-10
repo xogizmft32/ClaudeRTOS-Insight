@@ -205,6 +205,17 @@ class AnalysisPipeline:
         # 레이트·중복 추적
         self._last_key:  Optional[str] = None
         self._last_time: float = 0.0
+
+        # 적응형 임계값 (retry.adaptive_threshold=True 시 활성화)
+        if self._config.retry.adaptive_threshold:
+            from .pipeline_config import AdaptiveTrustThreshold as _AT
+            self._adaptive_threshold = _AT(
+                base    = self._config.retry.min_trust_to_retry,
+                window  = 20, margin = 0.05, warm_up = 5,
+            )
+        else:
+            self._adaptive_threshold = None
+
         _log.info("[Pipeline] 초기화: %s", self._config.summary())
 
     # ── 진입점 ───────────────────────────────────────────────
@@ -272,8 +283,14 @@ class AnalysisPipeline:
         trust, ok, notes = self._s4_verify(ai_raw, snap, issues, cfg.verify)
         if not ok:
             # ── Stage 4b: Retry (Evidence Injection) ─────────
-            # min_trust_to_retry 미만일 때만 재질의 (이상이면 품질 충분)
-            if cfg.retry.enabled and trust < cfg.retry.min_trust_to_retry:
+            # adaptive_threshold 활성화 시 환경 적응 임계값 사용
+            if cfg.retry.enabled and cfg.retry.adaptive_threshold \
+                    and self._adaptive_threshold is not None:
+                effective_min = self._adaptive_threshold.current()
+            else:
+                effective_min = cfg.retry.min_trust_to_retry
+
+            if cfg.retry.enabled and trust < effective_min:
                 ai_raw, trust, ok = self._s4b_retry(
                     ai_raw, snap, issues, ctx_str, notes,
                     cfg.ai, cfg.retry, triage,
@@ -282,7 +299,14 @@ class AnalysisPipeline:
                 r = self._fallback_result(snap, issues,
                                           f'검증 실패(trust={trust:.2f})', t0)
                 r.trust_score = trust
+                # 적응형 임계값 업데이트 (실패 케이스도 학습)
+                if self._adaptive_threshold is not None:
+                    self._adaptive_threshold.update(trust)
                 return r
+
+        # 적응형 임계값 업데이트 (성공 케이스)
+        if self._adaptive_threshold is not None:
+            self._adaptive_threshold.update(trust)
 
         # ── Stage 5: PostProcess ─────────────────────────────
         pm_mode = cfg.ai.postmortem_mode

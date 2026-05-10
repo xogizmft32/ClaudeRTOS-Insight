@@ -229,6 +229,97 @@ class RetryConfig:
     tier_on_retry:     str   = 'same' # 'same' | 'TIER1' | 'TIER2'
     compress_context:  bool  = True
     max_context_tasks: int   = 3
+    adaptive_threshold: bool = False  # True → AdaptiveTrustThreshold 활성화
+
+
+# ── AdaptiveTrustThreshold ───────────────────────────────────────
+
+class AdaptiveTrustThreshold:
+    """
+    환경 적응형 재질의 임계값 자동 조정기.
+
+    UART 노이즈·패킷 손실 등 신호 품질이 낮은 환경에서는 AI가 반환하는
+    trust_score가 구조적으로 낮아져 `min_trust_to_retry` 고정값이
+    불필요한 재질의를 반복시킨다 (최악 10s, 비용 3배).
+
+    이 클래스는 최근 N회 trust_score의 이동 중앙값으로 임계값을 자동 조정해
+    환경 노이즈에 의한 재질의 폭주를 억제한다.
+
+    동작
+    ----
+    - 매 Pipeline 실행 후 `update(trust_score)` 호출
+    - 다음 실행 전 `current()` 로 조정된 임계값 반환
+    - 기준: median(최근 window) - margin
+    - 하한 0.3 / 상한 0.9 clamp
+
+    Parameters
+    ----------
+    base    : 이동 평균 충분하지 않을 때 사용할 기본값 (기본 0.7)
+    window  : 이동 중앙값 윈도우 크기 (기본 20)
+    margin  : median에서 빼는 여백 — 너무 공격적인 임계값 방지 (기본 0.05)
+    min_val : 임계값 하한 (기본 0.30)
+    max_val : 임계값 상한 (기본 0.90)
+    warm_up : 이 수 이상 샘플이 쌓여야 적응 시작 (기본 5)
+
+    사용 예
+    -------
+    adaptive = AdaptiveTrustThreshold(base=0.7, window=20)
+    # Pipeline 실행 후
+    adaptive.update(result.trust_score)
+    # 다음 실행 전
+    cfg.retry.min_trust_to_retry = adaptive.current()
+    """
+
+    def __init__(self,
+                 base:    float = 0.7,
+                 window:  int   = 20,
+                 margin:  float = 0.05,
+                 min_val: float = 0.30,
+                 max_val: float = 0.90,
+                 warm_up: int   = 5):
+        import collections as _c
+        self._base    = base
+        self._window  = max(1, window)
+        self._margin  = margin
+        self._min     = min_val
+        self._max     = max_val
+        self._warm_up = warm_up
+        self._history: 'collections.deque' = _c.deque(maxlen=self._window)
+
+    def update(self, trust_score: float) -> None:
+        """새 trust_score를 이동 윈도우에 추가한다."""
+        self._history.append(float(trust_score))
+
+    def current(self) -> float:
+        """
+        현재 환경에 적응된 임계값을 반환한다.
+        warm_up 미달 시 base 값 반환.
+        """
+        import statistics as _s
+        if len(self._history) < self._warm_up:
+            return self._base
+        med = _s.median(self._history)
+        val = med - self._margin
+        return max(self._min, min(self._max, val))
+
+    def stats(self) -> dict:
+        """현재 상태 통계."""
+        import statistics as _s
+        hist = list(self._history)
+        return {
+            'current_threshold': self.current(),
+            'base':              self._base,
+            'samples':           len(hist),
+            'warm_up':           self._warm_up,
+            'ready':             len(hist) >= self._warm_up,
+            'median':            round(_s.median(hist), 3) if hist else None,
+            'min_seen':          round(min(hist), 3) if hist else None,
+            'max_seen':          round(max(hist), 3) if hist else None,
+        }
+
+    def reset(self) -> None:
+        """이동 윈도우를 초기화한다."""
+        self._history.clear()
 
 
 # ── Stage 6 설정 ─────────────────────────────────────────────

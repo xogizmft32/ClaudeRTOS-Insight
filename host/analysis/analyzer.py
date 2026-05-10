@@ -189,6 +189,17 @@ class AnalysisEngine:
         self._pool_idx: int = 0   # 라운드로빈 인덱스
         self._result_buf: List[Issue] = []  # 호출마다 재사용되는 결과 버퍼
 
+        # ── LRU 결과 캐시 (중복 분석 방지) ────────────────────
+        # UART 재전송 등으로 동일 sequence의 스냅샷이 반복 수신될 때
+        # 이전 분석 결과를 그대로 반환해 CPU 낭비를 막는다.
+        # 캐시 키: (sequence, cpu_usage, heap_free) — 경량 fingerprint
+        # 캐시 크기: 16 슬롯 (FreeRTOS 최대 재전송 윈도우 기준)
+        self._lru_cache: 'collections.OrderedDict' = __import__(
+            'collections').OrderedDict()
+        self._lru_max   = 16
+        self._lru_hits  = 0
+        self._lru_misses = 0
+
     @property
     def ai_mode(self) -> AiMode:
         return self._mode
@@ -221,6 +232,21 @@ class AnalysisEngine:
 
     # ── Public API ───────────────────────────────────────────────
     def analyze_snapshot(self, snap: Dict) -> List[Issue]:
+        # ── LRU 캐시 조회 ────────────────────────────────────────
+        # 동일 (sequence, cpu_usage, heap_free) 조합이면 재분석 불필요
+        _seq  = snap.get('sequence', -1)
+        _cpu  = snap.get('cpu_usage', -1)
+        _free = snap.get('heap', {}).get('free', -1)
+        _lru_key = (_seq, _cpu, _free)
+
+        if _lru_key in self._lru_cache:
+            self._lru_hits += 1
+            # LRU 갱신 (가장 최근 접근으로 이동)
+            self._lru_cache.move_to_end(_lru_key)
+            return self._lru_cache[_lru_key]
+
+        self._lru_misses += 1
+
         # ── 풀 인덱스 리셋 (호출마다 처음부터 재사용) ────────────
         self._pool_idx = 0
 
@@ -276,6 +302,15 @@ class AnalysisEngine:
             if iss.ai_ready:
                 self._issues.append(_copy.copy(iss))
         issues += self._check_peripheral(snap)
+
+        # ── LRU 캐시 저장 ────────────────────────────────────────
+        # 풀 객체는 다음 호출에서 덮어쓰이므로, 캐시에는 복사본을 저장
+        _cached = [_copy.copy(i) for i in issues]
+        self._lru_cache[_lru_key] = _cached
+        self._lru_cache.move_to_end(_lru_key)
+        if len(self._lru_cache) > self._lru_max:
+            self._lru_cache.popitem(last=False)  # 가장 오래된 항목 제거
+
         return issues
 
     def analyze_fault(self, fault: Dict) -> List[Issue]:
@@ -361,6 +396,17 @@ class AnalysisEngine:
     def get_ai_ready_issues(self) -> List[Issue]:
         """postmortem 세션 종료 후 일괄 AI 분석용."""
         return [i for i in self._issues if i.ai_ready]
+
+    def lru_stats(self) -> Dict:
+        """LRU 캐시 적중/미스 통계."""
+        total = self._lru_hits + self._lru_misses
+        return {
+            'hits':     self._lru_hits,
+            'misses':   self._lru_misses,
+            'hit_rate': round(self._lru_hits / total, 3) if total else 0.0,
+            'size':     len(self._lru_cache),
+            'max_size': self._lru_max,
+        }
 
     # ── Private checks (변경 없음) ───────────────────────────────
     def _update_trends(self, snap: Dict) -> None:
