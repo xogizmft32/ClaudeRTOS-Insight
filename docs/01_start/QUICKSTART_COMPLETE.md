@@ -84,7 +84,7 @@ pip install --no-index --find-links=./offline_pkgs/ \
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-vX.X.X-FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0 *(release: v4.9.8)*   # 압축 해제 후 생성되는 디렉터리명
+cd ClaudeRTOS-Insight
 
 # 가상환경 활성화 (위에서 생성한 경우)
 source .venv/bin/activate
@@ -310,7 +310,7 @@ pip3 install -r host/requirements.txt  # 모든 의존성 한번에 설치
 
 ```bash
 tar -xzf ClaudeRTOS-Insight--FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0 *(release: v4.9.8)*   # extracted directory name
+cd ClaudeRTOS-Insight
 
 # Auto-integrate into your project
 python3 install.py --project /path/to/your_project

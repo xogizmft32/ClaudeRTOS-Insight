@@ -1528,7 +1528,7 @@ debugger = RTOSDebuggerV3(
 **P1-1 버전 불일치 해소**
 - QUICKSTART_ko.md / QUICKSTART_en.md에 릴리즈 버전 병기
 - `claudertos_main.py` 시작 출력에 v4.9.9 추가
-- 버전 체계 명확화: 릴리즈(v4.9.x) vs 코드베이스(v2.5.0)
+- 버전 체계 명확화: 릴리즈 버전 vs 코드베이스 버전
 
 **P1-2 Priority Buffer 감사 문서 갱신**
 - SAFETY_AUDIT_SUMMARY.md가 V3 기준이었음을 명시
@@ -1655,7 +1655,7 @@ debugger = RTOSDebuggerV3(
 - `claudertos_main.py` argparse `--version` 인수 추가
   ```
   $ python3 claudertos_main.py --version
-  ClaudeRTOS-Insight v5.0.0 (codebase v2.5.0)
+  ClaudeRTOS-Insight v5.0.0
   ```
 - `github-update.sh` VERSION과 main 버전 일치 확인
 
@@ -2857,6 +2857,70 @@ pipeline = AnalysisPipeline(provider=..., config=cfg)
 | integrated_demo.py | ✅ 43/43 PASS (GROUP P 10/10 · A 23/23 · C 10/10) |
 | Level 2 run_level2.py | ✅ 40/40 PASS (GROUP P 12/12 · A 17/17 · C 11/11) |
 | Python 문법 | ✅ 65개 파일 오류 없음 |
+
+---
+
+## v5.6.2 — 2026-05-11
+
+### 정리
+
+#### 코드베이스 디렉터리명 변경
+
+압축 해제 시 생성되는 디렉터리명에서 버전 접미사를 제거했다.
+
+```bash
+# 변경 전
+tar -xzf ClaudeRTOS-Insight-<version>.tar.gz
+cd ClaudeRTOS-Insight
+
+# 변경 후
+tar -xzf ClaudeRTOS-Insight-<version>.tar.gz
+cd ClaudeRTOS-Insight
+```
+
+영향 파일: `README.md`, `make_patch.sh`, `tests/level2/run_level2.py`,
+`docs/01_start/GETTING_STARTED.md`, `docs/01_start/QUICKSTART_COMPLETE.md`,
+`docs/06_testing/TEST_RESULT_REPORT.md`, `host/claudertos_main.py`, `CHANGELOG.md`
+
+#### README.md 버전 정보 제거
+
+버전 관련 정보(배지 수치, 파일명, 검증 수)를 README.md에서 제거했다.
+버전 이력은 [CHANGELOG.md](CHANGELOG.md)에서, 최신 릴리스는 GitHub Releases에서 확인한다.
+
+---
+
+## v5.6.2 — 2026-05-11
+
+### 변경 사항
+
+#### 디렉터리명 정리
+
+압축 해제 시 생성되는 디렉터리명에서 버전 번호 제거.
+
+```bash
+# 변경 전
+tar -xzf ClaudeRTOS-Insight-<version>.tar.gz
+cd ClaudeRTOS-Insight
+
+# 변경 후
+tar -xzf ClaudeRTOS-Insight-<version>.tar.gz
+cd ClaudeRTOS-Insight
+```
+
+#### README.md 버전 정보 제거
+
+버전 관련 정보(배지, 수치, 범위)를 README.md에서 제거했다.
+버전 정보는 CHANGELOG.md 및 릴리즈 노트에서 확인한다.
+
+#### VERSION 파일 — 단일 진실 공급원
+
+README.md 배지에서 버전을 추출하던 방식을 `VERSION` 파일 기반으로 통일했다.
+
+```bash
+cat VERSION   # → 5.6.2
+```
+
+`github-update.sh`, `build_binary.sh`, `make_patch.sh` 모두 `VERSION` 파일을 참조한다.
 
 ---
 

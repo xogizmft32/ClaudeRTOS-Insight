@@ -11,7 +11,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VERSION=$(grep 'VERSION=' github-update.sh | grep -o '"[0-9.]*"' | tr -d '"')
+# ── 버전 단일 진실 공급원: README.md 배지 (make_patch.sh와 동일) ──
+VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]')
+if [[ -z "$VERSION" ]]; then
+  echo "ERROR: README.md 에서 버전 배지를 찾을 수 없습니다." >&2
+  echo "  VERSION 파일에 X.Y.Z 형식으로 버전을 입력하세요." >&2
+  exit 1
+fi
 echo "=== ClaudeRTOS-Insight v${VERSION} Binary Build ==="
 
 USE_DOCKER=0

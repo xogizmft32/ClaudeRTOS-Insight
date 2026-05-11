@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  github_cleanup.sh — ClaudeRTOS-Insight GitHub 저장소 정리 스크립트
-#  버전: v5.6.1 기준
+#  버전: v5.6.2 기준
 #
 #  역할:
 #    GitHub에 남아있는 삭제된 파일들을 제거해 현재 로컬 상태와 일치시킵니다.
@@ -334,7 +334,7 @@ else
     else
         git commit -q -m "cleanup: remove ${REMOVED} stale files from v${VERSION}
 
-Removed files that were deleted/merged in v5.2.1~v5.6.1:
+Removed files that were deleted/merged in v5.2.1~v5.6.2:
 - Merged duplicate docs (ko + en → single bilingual)
 - Reorganized docs/ flat → category subdirectories
 - Removed unused Python modules

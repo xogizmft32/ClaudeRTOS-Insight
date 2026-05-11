@@ -7,7 +7,7 @@ pytest 설치 후에는 표준 pytest 명령을 사용하길 권장한다.
 
 사용법
 ------
-cd ClaudeRTOS-Insight-v2.5.0
+cd ClaudeRTOS-Insight
 PYTHONPATH=host python3 tests/level2/run_level2.py          # 전체 실행
 PYTHONPATH=host python3 tests/level2/run_level2.py -m A     # GROUP A 만
 PYTHONPATH=host python3 tests/level2/run_level2.py -m P,C   # P + C

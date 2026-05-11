@@ -31,7 +31,7 @@
 
 ```bash
 tar -xzf ClaudeRTOS-Insight-vX.X.X-FINAL.tar.gz
-cd ClaudeRTOS-Insight-v2.5.0
+cd ClaudeRTOS-Insight
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r host/requirements.txt

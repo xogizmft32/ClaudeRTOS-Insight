@@ -46,7 +46,7 @@ Environment Variables:
         """)
 
     parser.add_argument('--version', action='version',
-        version='ClaudeRTOS-Insight v5.2.0 (codebase v2.5.0)')
+        version='ClaudeRTOS-Insight')
     parser.add_argument('--validate',
         action='store_true',
         help='환경 검증 실행 (하드웨어 불필요)')

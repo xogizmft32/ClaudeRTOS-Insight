@@ -148,7 +148,7 @@ Host (N100 PC)
   │        sync(transport) / sync_manual(offset_us) / correct_snapshot()
   │        드리프트 제거로 TrendAnalyzer 슬로프 정확도 향상
   │
-  └─ [25] ai/pipeline_config.py    ★ v5.6.1 AdaptiveTrustThreshold
+  └─ [25] ai/pipeline_config.py    ★ v5.6.2 AdaptiveTrustThreshold
            UART 노이즈 환경에서 trust_score 이동 중앙값으로 임계값 자동 조정
            불필요한 S4b 재질의 폭주 억제 → 최악 10s → 환경 적응
            RetryConfig.adaptive_threshold=True 로 활성화

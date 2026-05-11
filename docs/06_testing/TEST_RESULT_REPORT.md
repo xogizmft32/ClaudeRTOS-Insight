@@ -293,7 +293,7 @@ API 키 설정 후 `PipelineConfig.deep()`으로 재실행 시 아래 항목을 
 
 ```bash
 # 환경 설정
-cd ClaudeRTOS-Insight-v2.5.0
+cd ClaudeRTOS-Insight
 python3 install.py --project /tmp/test_project --no-pip --yes
 
 # 전체 검증 실행 (43/43 Protocol)

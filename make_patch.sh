@@ -12,7 +12,7 @@
 #  예시:
 #    bash make_patch.sh \
 #        releases/ClaudeRTOS-Insight-v5.2.0.tar.gz \
-#        /home/claude/ClaudeRTOS-Insight-v2.5.0 \
+#        /home/claude/ClaudeRTOS-Insight \
 #        ./releases
 #
 #  출력물:
@@ -47,7 +47,7 @@ mkdir -p "$OUT_DIR"
 OLD_VER=$(basename "$OLD_ARCHIVE" | grep -oP '\d+\.\d+\.\d+' | head -1)
 
 # 신규 버전: 새 디렉터리의 README.md 배지에서 추출 (단일 소스 원칙)
-NEW_VER=$(grep -oP '(?<=version-)\d+\.\d+\.\d+(?=-blue)' "${NEW_DIR}/README.md" 2>/dev/null | head -1)
+NEW_VER=$(cat "${NEW_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]')
 
 if [[ -z "$OLD_VER" ]]; then
     fail "이전 버전 추출 실패: 파일명에 x.y.z 형식이 있어야 합니다."
@@ -349,7 +349,7 @@ cat > "$README_FILE" << READMEEOF
 python3 apply_patch_${NEW_VER}.py
 
 # 경로 직접 지정
-python3 apply_patch_${NEW_VER}.py /path/to/ClaudeRTOS-Insight-v2.5.0
+python3 apply_patch_${NEW_VER}.py /path/to/ClaudeRTOS-Insight
 
 # 사전 확인 (변경 없음)
 python3 apply_patch_${NEW_VER}.py --verify
