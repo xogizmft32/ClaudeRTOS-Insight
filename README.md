@@ -158,24 +158,26 @@ Host Analysis Pipeline
 ## AI Provider
 
 ```bash
-export CLAUDERTOS_AI_PROVIDER=anthropic   # 기본 (Claude Sonnet)
-export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4o
-export CLAUDERTOS_AI_PROVIDER=google      # Gemini Pro
+export CLAUDERTOS_AI_PROVIDER=anthropic   # 기본 (Claude Sonnet 4)
+export CLAUDERTOS_AI_PROVIDER=openai      # GPT-4.1 / o3
+export CLAUDERTOS_AI_PROVIDER=google      # Gemini 2.5 Pro
 export CLAUDERTOS_AI_PROVIDER=ollama       # 로컬, 비용 $0
 export CLAUDERTOS_AI_PROVIDER=claude_agent # Agent SDK 에이전트 루프
 export CLAUDERTOS_AI_PROVIDER=gemini_cli   # Gemini CLI headless (무료)
 export CLAUDERTOS_AI_PROVIDER=codex_cli    # Codex CLI (ChatGPT 구독 포함)
 ```
 
-| Provider | 비용/이슈 | 특징 |
-|----------|----------|------|
-| anthropic | ~$0.0085 | 임베디드 도메인 품질 우수 |
-| openai | ~$0.0072 | 균형형 |
-| google | ~$0.0060 | 저비용 (REST API) |
-| ollama | **$0** | 로컬, 오프라인, llama3.1:8b 권장 |
-| claude_agent | ~$0.0085 | **Agent SDK 에이전트 루프** — 다회 추론 |
+| Provider | 기본 모델 (TIER1) | 비용/이슈 | 특징 |
+|----------|-----------------|----------|------|
+| anthropic | claude-sonnet-4-6 | ~$0.0085 | Extended Thinking 지원. 임베디드 도메인 품질 우수 |
+| openai | gpt-4.1 / o3 | ~$0.0060 | 1M 컨텍스트. o3는 추론 특화 |
+| google | gemini-2.5-pro | ~$0.0050 | 1M 컨텍스트. Extended Thinking 지원 |
+| ollama | llama3.1:8b | **$0** | 로컬, 오프라인. deepseek-r1:7b 추론 특화 |
+| claude_agent | claude-sonnet-4-6 | ~$0.0085 | **Agent SDK 에이전트 루프** — 다회 추론 |
 | gemini_cli | **$0** | Gemini CLI headless, OAuth 무료 티어 |
-| codex_cli | **$0** ★ | **Codex CLI**, gpt-5.3-codex, ChatGPT 구독 포함 |
+| codex_cli | **$0** ★ | **Codex CLI**, ChatGPT 구독 포함 |
+
+**→ 모델 전체 목록 및 가격: [docs/03_ai/MODEL_REGISTRY_GUIDE.md](docs/03_ai/MODEL_REGISTRY_GUIDE.md)**
 
 ---
 

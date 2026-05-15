@@ -105,15 +105,13 @@ bool RingBuffer_Write_Policy(RingBuffer_t *rb, const uint8_t *data,
              *
              * 운영 지침: 버퍼 포화 감지 후 상위 레이어에서
              * 샘플링 주기를 늘리거나 Priority Buffer를 사용하라.
+             *
+             * MISRA C:2012 Rule 2.1: 아래 return 이후 코드는 도달 불가였음.
+             * v5.7.1: 해당 dead code 제거 (FIX-C01).
              */
             rb->overflow_count++;  /* 포화 카운터 추가 기록 */
-            rb->dropped_bytes += length;
+            rb->dropped_bytes += (uint32_t)length;
             return false;  /* 새 데이터 드롭 (write_pos 미수정) */
-            
-            /* Check if we have enough space now */
-            if (length > available_space) {
-                return false;  /* Still not enough space */
-            }
         } else {
             /* OVERFLOW_DROP_NEWEST: reject new data */
             return false;

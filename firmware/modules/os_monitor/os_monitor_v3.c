@@ -74,6 +74,7 @@ void OSMonitorV3_Collect(void)
             s_cached_task_id = port_tasks[i].id;
             strncpy(s_cached_task_name, port_tasks[i].name,
                     MAX_TASK_NAME_LEN - 1U);
+            s_cached_task_name[MAX_TASK_NAME_LEN - 1U] = '\0'; /* FIX-C03: Rule 21.10 */
             break;
         }
     }
@@ -103,7 +104,8 @@ void OSMonitorV3_Collect(void)
         snap.tasks[i].cpu_pct   = port_tasks[i].cpu_pct;
         snap.tasks[i].stack_hwm = port_tasks[i].stack_hwm;
         snap.tasks[i].runtime_us= port_tasks[i].runtime_us;
-        strncpy(snap.tasks[i].name, port_tasks[i].name, MAX_TASK_NAME_LEN-1);
+        strncpy(snap.tasks[i].name, port_tasks[i].name, MAX_TASK_NAME_LEN - 1U);
+        snap.tasks[i].name[MAX_TASK_NAME_LEN - 1U] = '\0'; /* FIX-C03: Rule 21.10 */
 
         if (port_tasks[i].state != PORT_TASK_RUNNING) {
             cpu_total = (uint8_t)(cpu_total +
@@ -118,13 +120,19 @@ void OSMonitorV3_Collect(void)
     if (prio == PRIORITY_CRITICAL) s_stats.critical_events++;
     else if (prio == PRIORITY_HIGH) s_stats.warning_events++;
 
-    /* 와이어 포맷 직렬화 */
+    /* 와이어 포맷 직렬화
+     * FIX-C02 (MISRA Rule 17.3): BinaryProtocol_EncodeOSSnapshot 시그니처(13 args)와
+     * 구 호출 코드(11 args)의 불일치 수정. V4 Compat 래퍼 사용.
+     * snap.timestamp_us를 V4 신규 필드로 추가 전달.
+     */
     uint8_t pkt[MAX_PACKET_SIZE];
     size_t pkt_len = BinaryProtocol_EncodeOSSnapshot(
         pkt, sizeof(pkt),
-        snap.tick, s_sequence++,
+        snap.timestamp_us,                        /* V4 timestamp_us */
+        snap.tick, snap.snapshot_count,
         snap.heap_free, snap.heap_min, snap.heap_total, snap.uptime_ms,
-        snap.cpu_usage, snap.num_tasks, snap.tasks);
+        snap.cpu_usage, snap.num_tasks, snap.tasks,
+        s_sequence++);
 
     if (pkt_len == 0U) return;
 
@@ -202,11 +210,21 @@ void OSMonitorV3_HardFaultCapture(uint32_t *frame)
     s_fault_pkt.task_id = s_cached_task_id;
     strncpy((char *)s_fault_pkt.active_task_name,
             s_cached_task_name, MAX_TASK_NAME_LEN - 1U);
+    s_fault_pkt.active_task_name[MAX_TASK_NAME_LEN - 1U] = '\0'; /* FIX-C03: Rule 21.10 */
+
+    /* V4 CRITICAL 버퍼에 즉시 기록
+     * FIX-C04 (MISRA Rule 11.8): volatile 한정자 제거 캐스트 방지.
+     * volatile 구조체를 로컬 비-volatile 복사본에 먼저 복사 후 전달.
+     * HardFault 컨텍스트: 이 시점에 인터럽트는 비활성화 상태이므로 복사 안전.
+     */
+    FaultContextPacket_t fault_copy;
+    (void)memcpy(&fault_copy, (const FaultContextPacket_t *)&s_fault_pkt,
+                 sizeof(FaultContextPacket_t)); /* volatile 읽기 완료 */
 
     /* V4 CRITICAL 버퍼에 즉시 기록 */
     uint8_t pkt[MAX_PACKET_SIZE];
     size_t n = BinaryProtocol_EncodeFault(pkt, sizeof(pkt),
-                                           (FaultContextPacket_t *)&s_fault_pkt,
+                                           &fault_copy, /* FIX-C04: volatile 제거 캐스트 해소 */
                                            s_sequence++);
     if (n > 0U) {
         PriorityBufferV4_WriteFromISR(&s_buf, pkt, n,

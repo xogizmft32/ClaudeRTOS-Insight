@@ -752,8 +752,8 @@ class AnalysisPipeline:
                 pm.how  = d.get('how',  '')
                 if pm.is_complete():
                     return pm
-        except Exception:
-            pass
+        except (ValueError, KeyError, TypeError) as e:  # FIX-P03: PS-17 — JSON 파싱 오류
+            _log.debug("[Pipeline] postmortem JSON parse failed: %s", e)
 
         # 2차: 텍스트 패턴 폴백 (WHAT:, WHY:, HOW: 키워드)
         for line in text.splitlines():
@@ -791,8 +791,8 @@ class AnalysisPipeline:
                         result = cached.response_dict
                         _log.info("[Fallback] 캐시 재사용")
                         break
-                except Exception:
-                    pass
+                except (KeyError, AttributeError) as e:  # FIX-P03: PS-17 — 캐시 오류
+                    _log.debug("[Fallback] cache error: %s", e)
             elif strategy == 'degraded':
                 result = {
                     'issues': issues,

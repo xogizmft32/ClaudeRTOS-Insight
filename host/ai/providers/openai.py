@@ -2,10 +2,17 @@
 """
 openai.py — OpenAI / OpenAI-compatible API Provider
 
-기본 모델:
-  TIER1: gpt-4o            ($2.50/$10.00 per 1M)
-  TIER2: gpt-4o-mini       ($0.15/$0.60 per 1M)
-  TIER3: gpt-4o-mini
+기본 모델 (2025-2026):
+  TIER1: gpt-4.1          ($2.00/$8.00 per 1M)
+  TIER2: gpt-4.1-mini     ($0.40/$1.60 per 1M)
+  TIER3: gpt-4.1-nano     ($0.10/$0.40 per 1M)
+
+추론 모델 옵션:
+  TIER1: o3               ($10.00/$40.00 per 1M) — 복잡 인과관계 분석
+  TIER2: o4-mini          ($1.10/$4.40  per 1M)  — 균형형 추론
+
+레거시 (하위 호환):
+  gpt-4o, gpt-4o-mini
 
 OpenAI 호환 API (Together.ai, Fireworks, Groq 등):
   OpenAIProvider(
@@ -27,18 +34,24 @@ import time
 from typing import Optional
 
 from .base import AIProvider, AIResponse, AITier
+from .model_registry import ModelRegistry
 
-_DEFAULT_TIER1 = 'gpt-4o'
-_DEFAULT_TIER2 = 'gpt-4o-mini'
-_DEFAULT_TIER3 = 'gpt-4o-mini'
+_DEFAULT_TIER1 = 'gpt-4.1'
+_DEFAULT_TIER2 = 'gpt-4.1-mini'
+_DEFAULT_TIER3 = 'gpt-4.1-nano'
 
-_PRICE: dict = {
-    'gpt-4o':             (2.50,  10.00),
-    'gpt-4o-mini':        (0.15,   0.60),
-    'gpt-4-turbo':        (10.00, 30.00),
-    # Together.ai 예시
-    'meta-llama/Llama-3.1-70B-Instruct': (0.90, 0.90),
-    'meta-llama/Llama-3.1-8B-Instruct':  (0.20, 0.20),
+# 가격 테이블 — model_registry가 우선 참조됨, 여기는 폴백
+_PRICE_FALLBACK: dict = {
+    'gpt-4.1':                           (2.00,   8.00),
+    'gpt-4.1-mini':                      (0.40,   1.60),
+    'gpt-4.1-nano':                      (0.10,   0.40),
+    'o3':                                (10.00, 40.00),
+    'o4-mini':                           (1.10,   4.40),
+    'gpt-4o':                            (2.50,  10.00),
+    'gpt-4o-mini':                       (0.15,   0.60),
+    'gpt-4-turbo':                       (10.00, 30.00),
+    'meta-llama/Llama-3.1-70B-Instruct': (0.90,   0.90),
+    'meta-llama/Llama-3.1-8B-Instruct':  (0.20,   0.20),
 }
 
 
@@ -62,7 +75,7 @@ class OpenAIProvider(AIProvider):
         if key:
             try:
                 from openai import OpenAI
-                kwargs = {'api_key': key}
+                kwargs: dict = {'api_key': key}
                 if url:
                     kwargs['base_url'] = url
                 self._client = OpenAI(**kwargs)
@@ -83,7 +96,10 @@ class OpenAIProvider(AIProvider):
     def estimate_cost(self, tokens_in: int, tokens_out: int,
                        tier: AITier) -> float:
         model = self.model_for_tier(tier)
-        ip, op = _PRICE.get(model, (2.50, 10.00))
+        info = ModelRegistry.get(model)
+        if info:
+            return info.cost(tokens_in, tokens_out)
+        ip, op = _PRICE_FALLBACK.get(model, (2.00, 8.00))
         return (tokens_in * ip + tokens_out * op) / 1_000_000
 
     def is_available(self) -> bool:

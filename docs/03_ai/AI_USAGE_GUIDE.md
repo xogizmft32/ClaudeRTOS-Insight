@@ -204,10 +204,10 @@ print(f"예상: ${est['cost_est_usd']:.5f}")
 
 ## Reference Tables (English)
 
-| `anthropic` | claude-sonnet-4-6 | claude-haiku-4-5 | ~$0.0085 | Default, highest quality |
-| `openai` | gpt-4o | gpt-4o-mini | ~$0.0072 | Similar quality |
-| `google` | gemini-1.5-pro | gemini-1.5-flash | ~$0.0060 | Free tier available |
-| `ollama` | llama3.1:8b | qwen2.5:3b | **$0** | Local, no network |
+| `anthropic` | claude-sonnet-4-6 | claude-haiku-4-5-20251001 | ~$0.0085 | Default, highest quality. Opus 4 for complex analysis |
+| `openai` | gpt-4.1 / o3 | gpt-4.1-mini | ~$0.0060 | 1M context. o3 for reasoning-heavy faults |
+| `google` | gemini-2.5-pro | gemini-2.5-flash | ~$0.0050 | 1M context. Extended Thinking supported |
+| `ollama` | llama3.1:8b / deepseek-r1:7b | llama3.2:3b | **$0** | Local, no network. deepseek-r1 for reasoning |
 
 
 | Critical | TIER1 | 500 | Accuracy first |

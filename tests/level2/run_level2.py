@@ -96,8 +96,8 @@ def run_test(module_name: str, fn_name: str, fn):
 
 
 def _group_of(fn_name: str) -> str:
-    """함수명에서 그룹 추출: test_P01 → P, test_A06 → A, test_C10 → C."""
-    if len(fn_name) >= 6 and fn_name[5] in 'PAC':
+    """함수명에서 그룹 추출: test_P01 → P, test_A06 → A, test_C10 → C, test_S_L2 → S."""
+    if len(fn_name) >= 6 and fn_name[5] in 'PACS':
         return fn_name[5]
     return ''
 
@@ -110,9 +110,10 @@ def _should_run(fn_name: str) -> bool:
 
 # ── 테스트 모듈 목록 ────────────────────────────────────────
 TEST_MODULES = [
-    ('test_P_parser',   'GROUP P — Protocol / Parser'),
-    ('test_A_ai',       'GROUP A — AI 모듈'),
-    ('test_C_pipeline', 'GROUP C — 분석 / 파이프라인'),
+    ('test_P_parser',      'GROUP P — Protocol / Parser'),
+    ('test_A_ai',          'GROUP A — AI 모듈'),
+    ('test_C_pipeline',    'GROUP C — 분석 / 파이프라인'),
+    ('test_S_simulation',  'GROUP S — 시뮬레이션 엔진'),
 ]
 
 SEP  = '─' * 65
@@ -170,7 +171,7 @@ print(f"  Level 2 검증 결과 — {total}개 테스트")
 print(SEP)
 
 # 그룹별 소계
-for group, label in [('P', 'Protocol/Parser'), ('A', 'AI 모듈'), ('C', '파이프라인')]:
+for group, label in [('P', 'Protocol/Parser'), ('A', 'AI 모듈'), ('C', '파이프라인'), ('S', '시뮬레이션')]:
     g_res = [r for r in results if f'test_{group}' in r['label']]
     if not g_res:
         continue

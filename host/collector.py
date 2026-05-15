@@ -142,8 +142,8 @@ class JLinkCollector(BaseCollector):
             try:
                 self._jlink.swo_stop()
                 self._jlink.close()
-            except Exception:
-                pass
+            except OSError as e:  # FIX-P02: PS-17 — HW 인터페이스 오류
+                _log.debug("[JLink] close error (무시): %s", e)
             self._jlink = None
         _log.info("[JLink] 연결 해제")
 
@@ -194,8 +194,8 @@ class JLinkCollector(BaseCollector):
                 try:
                     self._jlink.swo_flush()
                     self._jlink.swo_start(self._swo_hz)
-                except Exception:
-                    pass
+                except (OSError, RuntimeError) as e:  # FIX-P02: PS-17
+                    _log.warning("[JLink] reconnect flush failed: %s", e)
 
             except Exception as e:
                 if self._running:
@@ -678,8 +678,8 @@ class _LegacyCollectorWrapper:
         try:
             for raw in self._collector.stream():
                 self._cb(raw)
-        except Exception:
-            pass
+        except (OSError, RuntimeError, StopIteration) as e:  # FIX-P02: PS-17
+            _log.debug("[BackgroundThread] stream ended: %s", e)
 
     def stop(self):
         if self._collector:

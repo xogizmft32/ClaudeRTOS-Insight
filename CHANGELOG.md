@@ -2924,3 +2924,165 @@ cat VERSION   # → 5.6.2
 
 ---
 
+## [5.7.0] — 2026-05-13
+
+### 추가
+
+#### 시뮬레이션 엔진 (`host/simulation/`)
+- `scenario_generator.py` — 8종 결정론적 RTOS 장애 시나리오 생성기
+  - `stack_overflow`, `heap_exhaustion`, `cpu_overload`, `priority_inversion`
+  - `task_starvation`, `deadlock`, `isr_storm`, `hardfault`
+  - `ScenarioGenerator.generate(scenario, ticks)` / `generate_all(ticks)`
+- `fault_injector.py` — 스냅샷 스트림에 장애 주입 유틸리티
+  - `inject_at_tick()` — 결정론적, 원본 불변(deepcopy)
+  - `inject_probabilistic()` — 확률적, 동일 seed → 재현 가능
+  - 7종 FaultSpec 타입: `stack_hwm`, `heap_spike`, `heap_set`, `cpu_spike`, `cpu_set`, `task_block`, `task_suspend`
+- `sim_runner.py` — CLI + Python API 통합 실행기
+  - `SimRunner.run(scenario, ticks, inject_spec)` → `SimResult`
+  - `SimRunner.run_all(ticks)` → `{scenario: SimResult}`
+  - CLI: `--scenario`, `--all`, `--inject`, `--ai-mode`
+
+#### AI 모델 레지스트리 (`host/ai/providers/model_registry.py`)
+- `ModelInfo` dataclass — 모델 메타데이터 통합 관리
+- `ModelRegistry` 클래스 — 필터·조회·비용 계산 인터페이스
+  - `by_provider()`, `tier1_models()`, `reasoning_models()`, `local_models()`
+  - `get(name)`, `price(name)`, `summary()`
+- `model_cost()` 편의 함수
+
+#### 신규 모델 지원
+- **OpenAI**: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano` (1M 컨텍스트)
+- **OpenAI 추론**: `o3` ($10/$40 per 1M), `o4-mini` ($1.10/$4.40 per 1M)
+- **Google**: `gemini-2.5-pro` (Extended Thinking, 1M), `gemini-2.5-flash` (1M), `gemini-2.0-flash`
+- **Ollama**: `llama3.2:3b/1b`, `phi4:14b`, `deepseek-r1:7b/1.5b`, `qwen2.5-coder:7b`, `gemma3:4b`
+- 총 25개 모델 등록 (기존 레거시 포함)
+
+#### `AIProvider` base.py 확장
+- `stream_generate()` — 스트리밍 인터페이스 (기본 구현 제공, 서브클래스 재정의 가능)
+- `model_info()` — tier → ModelInfo 조회
+- `supports_thinking()` / `is_reasoning_model()` — 모델 특성 헬퍼
+
+#### `AnthropicProvider` Extended Thinking
+- `enable_thinking=True`, `thinking_budget=N` 파라미터 추가
+- `claude-opus-4-6`, `claude-sonnet-4-6` 지원 확인 자동 처리
+
+#### 문서
+- `docs/03_ai/MODEL_REGISTRY_GUIDE.md` 신규 — 모델 카탈로그 API 레퍼런스
+- `docs/04_architecture/SIMULATION_GUIDE.md` 신규 — 시뮬레이션 엔진 사용법
+- `docs/03_ai/AI_USAGE_GUIDE.md` — 모델 목록 업데이트 (gpt-4.1, gemini-2.5 계열)
+
+### 변경
+
+- `providers/__init__.py` — `ModelRegistry`, `ModelInfo`, `get_model`, `model_cost` export 추가
+- `openai.py` 기본 모델: `gpt-4o` → `gpt-4.1` (TIER1), `gpt-4o-mini` → `gpt-4.1-mini` (TIER2), `gpt-4.1-nano` (TIER3) 추가
+- `google.py` 기본 모델: `gemini-1.5-pro` → `gemini-2.5-pro` (TIER1), `gemini-1.5-flash` → `gemini-2.5-flash` (TIER2)
+- `ollama.py` 기본 TIER3: `qwen2.5:1.5b`로 변경, 신규 권장 모델 docstring 추가
+- `integrated_demo.py` Group S (S-01~S-05) 추가 → 43/43 → 48/48
+- `run_level2.py` Group S (S-L2-01~S-L2-05) 추가 → 40/40 → 45/45
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Protocol 48/48 | ✅ ALL PASS (174ms) |
+| Level 2 45/45 | ✅ ALL PASS (232ms) |
+| GROUP S 신규 5/5 | ✅ ALL PASS |
+| 기존 43/43 회귀 없음 | ✅ |
+
+---
+
+## [5.7.1] — 2026-05-13 (MISRA 감사 수정)
+
+### 버그 수정 (MISRA C:2012 감사)
+
+#### 🔴 CRITICAL
+
+- **FIX-C01** `firmware/core/ring_buffer.c`: `OVERFLOW_DROP_OLDEST` 분기 내 `return false` 이후
+  도달 불가 dead code 2행 제거 (MISRA Rule 2.1)
+- **FIX-C02** `firmware/modules/os_monitor/os_monitor_v3.c`: `BinaryProtocol_EncodeOSSnapshot` 호출 인수
+  11개 → 13개로 수정 (timestamp_us·sequence 누락 수정). 이전 코드는 `snap.tasks` 포인터가 `num_tasks`(uint8_t)
+  자리에 들어가는 UB였음 (MISRA Rule 17.3)
+
+#### 🟡 MAJOR
+
+- **FIX-C03** `firmware/modules/os_monitor/os_monitor_v3.c`: `strncpy` 호출 3곳 후 명시적 null 종료 추가
+  (`s_cached_task_name`, `snap.tasks[i].name`, `s_fault_pkt.active_task_name`) (MISRA Rule 21.10)
+- **FIX-C04** `firmware/modules/os_monitor/os_monitor_v3.c`: `(FaultContextPacket_t *)&s_fault_pkt`
+  volatile 제거 캐스트 → `memcpy`로 비-volatile 로컬 복사 후 전달 (MISRA Rule 11.8)
+- **FIX-C05** `firmware/modules/adaptive_sampler.c`: `for (int i = 0; ...)` signed 루프 카운터 3개
+  `uint8_t i = 0U`로 변경 (MISRA Rule 14.4)
+- **FIX-C06** `firmware/modules/adaptive_sampler.c`: `#define DEFAULT_*` 7개에 U 접미사 추가 (MISRA Rule 7.2)
+- **FIX-C07** `firmware/port/esp32/port_impl.c`, `firmware/port/cortex_m4/port_impl.c`:
+  `strncpy` 후 `t->name[PORT_TASK_NAME_MAX-1] = '\0'` 추가 (MISRA Rule 21.10)
+
+#### Python 호스트
+
+- **FIX-P01** `host/ai/providers/base.py`: `stream_generate()` → `Generator[str, None, None]`,
+  `model_info()` → `Optional[ModelInfo]` 반환 타입 어노테이션 추가 (PS-08)
+- **FIX-P02** `host/collector.py`: `except Exception: pass` 3곳 → `OSError`, `RuntimeError` 등
+  구체적 예외 타입으로 수정 + 로그 추가 (PS-17)
+- **FIX-P03** `host/ai/analysis_pipeline.py`: `except Exception: pass` 2곳 → `(ValueError, KeyError, TypeError)`,
+  `(KeyError, AttributeError)` 로 구체화 (PS-17)
+
+### 문서
+
+- `docs/05_quality/MISRA_AUDIT_REPORT_v5_7_1.md` 신규 — 감사 결과·Deviation 레코드 전체 포함
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Protocol 48/48 | ✅ ALL PASS (327ms) |
+| Level 2 45/45 | ✅ ALL PASS (110ms) |
+| 회귀 없음 | ✅ |
+
+---
+
+## [5.7.2] — 2026-05-15 (GitHub Release 자동화)
+
+### 추가
+
+- **`release_notes.py`** — CHANGELOG → GitHub Release body 변환기
+  - 현재 버전 블록 자동 추출 + 검증 배지(shields.io) 삽입
+  - `--github-output` 플래그: GitHub Actions `GITHUB_OUTPUT` 직접 기록
+  - `--out FILE`: Markdown 파일 저장
+- **`.github/workflows/release.yml`** — 태그 푸시 자동 Release 워크플로우
+  - `v*` 태그 푸시 시 자동 트리거
+  - Protocol 48/48 + Level 2 45/45 검증 실패 시 Release 중단
+  - CHANGELOG → Release body 자동 생성
+  - 배포 아카이브(`tar.gz`) + SHA256 체크섬 자동 첨부
+  - `workflow_dispatch` 지원 (수동 실행 가능)
+- **`github-update.sh`** — Release 자동화 통합 (6단계 → 7단계)
+  - Step 7 추가: `gh` CLI 있으면 자동 Release 생성
+  - `gh` 없음 + Actions 있음: 태그 푸시만으로 자동 처리 안내
+  - `gh` 없음 + Actions 없음: 수동 URL + Notes 파일 경로 안내
+  - 커밋 메시지: `release_notes.py` 연동으로 요약 자동 추출
+  - 검증 점수 동적 감지 (하드코딩 43/43 → 실제 점수)
+  - `required_files`에 v5.7.x 신규 파일 추가
+
+### 릴리즈 흐름
+
+```
+git tag v5.7.2 → git push origin v5.7.2
+       ↓
+GitHub Actions release.yml 자동 트리거
+  [1] 검증 (48/48 실패 시 중단)
+  [2] release_notes.py → Release body 생성
+  [3] tar.gz + SHA256 빌드
+  [4] GitHub Release 자동 생성 + 파일 첨부
+       ↓
+github.com/…/releases/tag/v5.7.2
+  제목: ClaudeRTOS-Insight v5.7.2
+  배지: Protocol 48/48 PASS | Level2 45/45 PASS
+  본문: CHANGELOG 내용 그대로
+  파일: ClaudeRTOS-Insight-v5.7.2.tar.gz + .sha256
+```
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Protocol 48/48 | ✅ ALL PASS |
+| Level 2 45/45  | ✅ ALL PASS |
+
+---
+

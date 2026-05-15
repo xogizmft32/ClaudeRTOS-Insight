@@ -117,7 +117,8 @@ bool port_rtos_get_tasks(PortTaskInfo_t *out, uint8_t *count)
     for (UBaseType_t i = 0; i < n && cnt < PORT_TASKS_MAX; i++) {
         PortTaskInfo_t *t = &out[cnt];
         t->id = (uint8_t)((uintptr_t)raw[i].xHandle & 0xFFU);
-        strncpy(t->name, raw[i].pcTaskName, PORT_TASK_NAME_MAX-1);
+        strncpy(t->name, raw[i].pcTaskName, PORT_TASK_NAME_MAX - 1U);
+        t->name[PORT_TASK_NAME_MAX - 1U] = '\0'; /* FIX-C07: MISRA Rule 21.10 */
         t->name[PORT_TASK_NAME_MAX-1] = '\0';
         t->priority  = (uint8_t)raw[i].uxCurrentPriority;
         t->stack_hwm = (uint16_t)raw[i].usStackHighWaterMark;

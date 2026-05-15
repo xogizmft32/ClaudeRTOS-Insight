@@ -23,7 +23,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Generator, Optional
+
+if TYPE_CHECKING:
+    from .model_registry import ModelInfo
 
 
 class AITier(str, Enum):
@@ -129,6 +132,49 @@ class AIProvider(ABC):
         기본: True (서브클래스에서 재정의 가능)
         """
         return True
+
+    def stream_generate(self, system: str, user: str,
+                        max_tokens: int,
+                        tier: AITier = AITier.TIER1) -> 'Generator[str, None, None]':
+        """
+        스트리밍 생성 인터페이스 (선택 구현).
+
+        각 chunk를 str로 yield한다.
+        Provider가 스트리밍을 지원하지 않으면 generate()를 통째로 yield.
+
+        사용:
+            for chunk in provider.stream_generate(system, user, 1024):
+                print(chunk, end='', flush=True)
+
+        서브클래스 재정의:
+            def stream_generate(self, system, user, max_tokens, tier):
+                for event in self._client.messages.stream(...):
+                    yield event.text
+        """
+        # 기본 구현: generate() 결과를 단일 yield
+        resp = self.generate(system, user, max_tokens, tier)
+        yield resp.text
+
+    def model_info(self, tier: AITier = AITier.TIER1) -> 'Optional[ModelInfo]':
+        """
+        tier에 해당하는 ModelInfo 반환.
+        model_registry에 등록되지 않은 모델이면 None.
+        """
+        try:
+            from .model_registry import ModelRegistry
+            return ModelRegistry.get(self.model_for_tier(tier))
+        except Exception:  # noqa: BLE001 — import 실패 등 환경 오류
+            return None
+
+    def supports_thinking(self, tier: AITier = AITier.TIER1) -> bool:
+        """Extended Thinking / CoT 지원 여부."""
+        info = self.model_info(tier)
+        return info.supports_thinking if info else False
+
+    def is_reasoning_model(self, tier: AITier = AITier.TIER1) -> bool:
+        """추론 특화 모델 (o3, R1 계열 등) 여부."""
+        info = self.model_info(tier)
+        return info.is_reasoning if info else False
 
     def __repr__(self) -> str:
         t1 = self.model_for_tier(AITier.TIER1)

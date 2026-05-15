@@ -4,10 +4,21 @@ ollama.py — Ollama 로컬 LLM Provider
 
 비용: $0 (로컬 실행)
 네트워크: 불필요
-N100 권장 모델:
-  TIER1: llama3.1:8b      (~6 tok/s  @ N100)
-  TIER2: qwen2.5:3b       (~18 tok/s @ N100)
-  TIER3: qwen2.5:1.5b     (~30 tok/s @ N100)
+
+권장 모델 (2025-2026):
+  TIER1:
+    llama3.1:8b       — ~6  tok/s @ N100, 범용
+    deepseek-r1:7b    — ~5  tok/s @ N100, 추론 특화
+    qwen2.5-coder:7b  — ~5  tok/s @ N100, C 펌웨어 수정 제안
+    phi4:14b          — GPU 권장, 고성능
+  TIER2:
+    llama3.2:3b       — ~20 tok/s @ N100
+    qwen2.5:3b        — ~18 tok/s @ N100
+    gemma3:4b         — ~15 tok/s @ N100, 128K 컨텍스트
+  TIER3:
+    llama3.2:1b       — ~40 tok/s @ N100
+    qwen2.5:1.5b      — ~30 tok/s @ N100
+    deepseek-r1:1.5b  — ~25 tok/s @ N100, 초경량 추론
 
 환경 변수:
   OLLAMA_BASE_URL  (기본: http://localhost:11434)
@@ -15,7 +26,10 @@ N100 권장 모델:
 설치:
   curl -fsSL https://ollama.com/install.sh | sh
   ollama pull llama3.1:8b
-  ollama pull qwen2.5:3b
+  ollama pull llama3.2:3b
+  ollama pull deepseek-r1:7b
+  ollama pull qwen2.5-coder:7b
+  ollama pull phi4:14b
 """
 
 from __future__ import annotations
@@ -30,7 +44,7 @@ from .base import AIProvider, AIResponse, AITier
 
 _DEFAULT_HOST  = 'http://localhost:11434'
 _DEFAULT_TIER1 = 'llama3.1:8b'
-_DEFAULT_TIER2 = 'qwen2.5:3b'
+_DEFAULT_TIER2 = 'llama3.2:3b'
 _DEFAULT_TIER3 = 'qwen2.5:1.5b'
 
 
@@ -70,12 +84,21 @@ class OllamaProvider(AIProvider):
 
     def is_available(self) -> bool:
         try:
-            req = urllib.request.Request(f"{self._host}/api/tags",
-                                          method='GET')
+            req = urllib.request.Request(f"{self._host}/api/tags", method='GET')
             with urllib.request.urlopen(req, timeout=2):
                 return True
         except Exception:
             return False
+
+    def list_local_models(self) -> list[str]:
+        """Ollama 서버에 pull된 모델 목록 반환."""
+        try:
+            req = urllib.request.Request(f"{self._host}/api/tags", method='GET')
+            with urllib.request.urlopen(req, timeout=3) as r:
+                data = json.loads(r.read())
+                return [m['name'] for m in data.get('models', [])]
+        except Exception:
+            return []
 
     def generate(self, system: str, user: str,
                  max_tokens: int, tier: AITier = AITier.TIER1) -> AIResponse:

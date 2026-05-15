@@ -4,7 +4,7 @@ ClaudeRTOS-Insight V5.3  —  Integration Demo & 30/30 Protocol Validation
 
 사용법:
   python3 integrated_demo.py --validate           # 30/30 Protocol 전체 실행
-  python3 integrated_demo.py --validate --group P # 특정 그룹만 실행 (P/A/C)
+  python3 integrated_demo.py --validate --group P # 특정 그룹만 실행 (P/A/C/S)
   python3 integrated_demo.py --simulate-switch
   python3 integrated_demo.py --port jlink [--ai-mode offline|postmortem|realtime]
   python3 integrated_demo.py --port uart:/dev/ttyUSB0
@@ -206,15 +206,17 @@ def run_validation(groups: list = None) -> bool:
     30/30 Protocol 검증.
 
     Args:
-        groups: 실행할 그룹 리스트 (['P','A','C']). None이면 전체.
+        groups: 실행할 그룹 리스트 (['P','A','C','S']). None이면 전체.
 
     Returns:
-        True if 30/30 PASS.
+        True if ALL PASS.
     """
     run_all = not groups
     run_P   = run_all or 'P' in groups
     run_A   = run_all or 'A' in groups
     run_C   = run_all or 'C' in groups
+    run_S   = run_all or 'S' in groups
+    group_filter = groups  # alias for S-group check
 
     results: list[_CheckResult] = []
     t_total = time.perf_counter()
@@ -1405,6 +1407,82 @@ void vBadISR(void) {
                             'End-to-End 파이프라인 (파싱→분석→보고서)', _c10))
 
     # ─────────────────────────────────────────────────────────
+    # GROUP S — 시뮬레이션 엔진
+    # ─────────────────────────────────────────────────────────
+    if run_S:
+        print("  GROUP S — 시뮬레이션 엔진")
+
+        # S-01: ScenarioGenerator — 8종 시나리오 생성
+        def _s01():
+            from simulation.scenario_generator import ScenarioGenerator, SCENARIOS
+            gen = ScenarioGenerator(seed=42)
+            all_s = gen.generate_all(ticks=10)
+            ok = (len(all_s) == len(SCENARIOS) and
+                  all(len(v) == 10 for v in all_s.values()))
+            return ok, f"scenarios={len(all_s)} ticks_each=10"
+        results.append(_chk('S-01', 'S',
+                            'ScenarioGenerator — 8종 시나리오 생성', _s01))
+
+        # S-02: ScenarioGenerator — hardfault 시나리오에 ParsedFault 포함
+        def _s02():
+            from simulation.scenario_generator import ScenarioGenerator
+            from parsers.binary_parser import ParsedFault
+            gen   = ScenarioGenerator(seed=42)
+            snaps = gen.generate('hardfault', ticks=20)
+            faults = [s for s in snaps if isinstance(s, ParsedFault)]
+            ok = (len(faults) == 1 and faults[0].fault_type == 'HardFault')
+            return ok, f"fault_count={len(faults)}"
+        results.append(_chk('S-02', 'S',
+                            'ScenarioGenerator — hardfault ParsedFault 포함', _s02))
+
+        # S-03: FaultInjector — inject_at_tick 결정론적 주입
+        def _s03():
+            from simulation.scenario_generator import ScenarioGenerator
+            from simulation.fault_injector import FaultInjector, FaultSpec
+            gen   = ScenarioGenerator(seed=0)
+            snaps = gen.generate('heap_exhaustion', ticks=15)
+            inj   = FaultInjector(seed=0)
+            spec  = FaultSpec('stack_hwm', value=20)
+            out   = inj.inject_at_tick(snaps, tick=5, fault=spec)
+            hwm_before = snaps[5].tasks[0].stack_hwm
+            hwm_after  = out[5].tasks[0].stack_hwm
+            ok = (hwm_after == 20 and hwm_before != 20 and
+                  inj.stats()['total'] == 1)
+            return ok, (f"hwm_before={hwm_before} hwm_after={hwm_after} "
+                        f"records={inj.stats()['total']}")
+        results.append(_chk('S-03', 'S',
+                            'FaultInjector — inject_at_tick 결정론적', _s03))
+
+        # S-04: FaultInjector — inject_probabilistic 통계
+        def _s04():
+            from simulation.scenario_generator import ScenarioGenerator
+            from simulation.fault_injector import FaultInjector, FaultSpec
+            gen   = ScenarioGenerator(seed=1)
+            snaps = gen.generate('cpu_overload', ticks=100)
+            inj   = FaultInjector(seed=7)
+            spec  = FaultSpec('cpu_spike', value=10)
+            inj.inject_probabilistic(snaps, prob=0.2, fault=spec)
+            st  = inj.stats()
+            cnt = st['total']
+            # prob=0.2, ticks=100 → 기대 20, ±15 허용
+            ok  = 5 <= cnt <= 35
+            return ok, f"injected={cnt}/100 (prob=0.2)"
+        results.append(_chk('S-04', 'S',
+                            'FaultInjector — inject_probabilistic 통계', _s04))
+
+        # S-05: SimRunner — stack_overflow 시나리오 이슈 감지
+        def _s05():
+            from simulation.sim_runner import SimRunner
+            runner = SimRunner(ai_mode='offline', seed=42)
+            res    = runner.run('stack_overflow', ticks=30)
+            ok     = res.ok and res.total_issues > 0
+            return ok, (f"issues={res.total_issues} "
+                        f"elapsed={res.elapsed_ms:.1f}ms "
+                        f"errors={len(res.errors)}")
+        results.append(_chk('S-05', 'S',
+                            'SimRunner — stack_overflow 이슈 감지', _s05))
+
+    # ─────────────────────────────────────────────────────────
     # 최종 집계
     # ─────────────────────────────────────────────────────────
     total_ms = (time.perf_counter() - t_total) * 1000
@@ -1414,16 +1492,17 @@ void vBadISR(void) {
 
     # 그룹별 요약
     print(f"\n{'═'*65}")
-    print(f"  43/43 Protocol — 결과 요약")
+    total_str = f"{total}/48" if total == 48 else f"{total}/{total}"
+    print(f"  {total_str} Protocol — 결과 요약")
     print(f"{'─'*65}")
-    for grp in ('P', 'A', 'C'):
+    for grp in ('P', 'A', 'C', 'S'):
         grp_res = [r for r in results if r.group == grp]
         if not grp_res:
             continue
         gp = sum(1 for r in grp_res if r.passed)
         gf = sum(1 for r in grp_res if not r.passed)
         sym = '✅' if gf == 0 else '❌'
-        labels = {'P':'Protocol/Parser','A':'AI 모듈','C':'분석/파이프라인'}
+        labels = {'P':'Protocol/Parser','A':'AI 모듈','C':'분석/파이프라인','S':'시뮬레이션'}
         print(f"  {sym} GROUP {grp} [{labels[grp]}]: {gp}/{len(grp_res)} PASS")
         if gf:
             for r in grp_res:
@@ -1676,10 +1755,10 @@ examples:
     ap.add_argument('--duration', type=float, default=60.0)
     ap.add_argument('--group',
                     nargs='+',
-                    choices=['P', 'A', 'C'],
+                    choices=['P', 'A', 'C', 'S'],
                     default=None,
                     metavar='GROUP',
-                    help='실행할 그룹 선택 (P/A/C). 기본: 전체')
+                    help='실행할 그룹 선택 (P/A/C/S). 기본: 전체')
     ap.add_argument('--ai-mode',
                     choices=['offline','postmortem','realtime'],
                     default='postmortem',

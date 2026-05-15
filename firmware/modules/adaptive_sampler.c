@@ -10,13 +10,13 @@
 #include <stdlib.h>
 
 /* Default configuration values */
-#define DEFAULT_CPU_THRESHOLD 80
-#define DEFAULT_BUFFER_THRESHOLD 80
-#define DEFAULT_MAX_SKIP_MS 10000
-#define DEFAULT_BURST_DURATION_MS 10000
-#define DEFAULT_BURST_RATE_MS 100
-#define DEFAULT_CPU_CHANGE 10
-#define DEFAULT_HEAP_CHANGE 1024
+#define DEFAULT_CPU_THRESHOLD    80U  /* FIX-C06: Rule 7.2 */
+#define DEFAULT_BUFFER_THRESHOLD 80U  /* FIX-C06: Rule 7.2 */
+#define DEFAULT_MAX_SKIP_MS      10000U /* FIX-C06: Rule 7.2 */
+#define DEFAULT_BURST_DURATION_MS 10000U /* FIX-C06: Rule 7.2 */
+#define DEFAULT_BURST_RATE_MS    100U   /* FIX-C06: Rule 7.2 */
+#define DEFAULT_CPU_CHANGE       10U    /* FIX-C06: Rule 7.2 */
+#define DEFAULT_HEAP_CHANGE      1024U  /* FIX-C06: Rule 7.2 */
 
 /* Assume OSSnapshot_t from event_classifier.c */
 typedef struct {
@@ -42,7 +42,7 @@ static bool has_critical_change(const OSSnapshot_t *current,
                                const OSSnapshot_t *last)
 {
     /* Stack overflow detected */
-    for (int i = 0; i < current->task_count; i++) {
+    for (uint8_t i = 0U; i < current->task_count; i++) /* FIX-C05: Rule 14.4 */ {
         if (current->tasks[i].stack_hwm < STACK_CRITICAL_THRESHOLD &&
             last->tasks[i].stack_hwm >= STACK_CRITICAL_THRESHOLD) {
             return true;  /* Crossing critical threshold! */
@@ -56,7 +56,7 @@ static bool has_critical_change(const OSSnapshot_t *current,
     }
     
     /* Task state changed to Blocked */
-    for (int i = 0; i < current->task_count; i++) {
+    for (uint8_t i = 0U; i < current->task_count; i++) /* FIX-C05: Rule 14.4 */ {
         if (current->tasks[i].state == 3 /* BLOCKED */ &&
             last->tasks[i].state != 3) {
             return true;
@@ -86,7 +86,7 @@ static bool has_significant_change(const OSSnapshot_t *current,
     }
     
     /* Any task priority changed */
-    for (int i = 0; i < current->task_count; i++) {
+    for (uint8_t i = 0U; i < current->task_count; i++) /* FIX-C05: Rule 14.4 */ {
         if (current->tasks[i].priority != last->tasks[i].priority) {
             return true;
         }
