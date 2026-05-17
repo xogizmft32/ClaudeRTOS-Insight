@@ -1,27 +1,39 @@
 # .github/workflows/release.yml
 #
 # ClaudeRTOS-Insight 자동 릴리즈 워크플로우
-# 트리거: v* 형식 태그 푸시 (e.g. v5.7.2)
 #
-# 필요 설정:
-#   Settings → Actions → General → Workflow permissions
-#   → "Read and write permissions" 선택 후 Save
+# 트리거: v* 형식의 태그 푸시 (e.g. v5.7.1)
+#
+# 흐름:
+#   1. 코드 체크아웃
+#   2. Python 환경 설정
+#   3. Protocol 검증 (48/48)
+#   4. CHANGELOG → Release body 생성
+#   5. 배포 아카이브 빌드 (tar.gz)
+#   6. GitHub Release 자동 생성 + 아카이브 업로드
+#
+# 필요 Secrets:
+#   없음 — GITHUB_TOKEN은 Actions가 자동 제공
+#
+# 수동 실행:
+#   GitHub → Actions → "Release" → Run workflow → tag 입력
 
 name: Release
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # v5.7.1 형식만
+
   workflow_dispatch:
     inputs:
       tag:
-        description: '릴리즈할 태그 (e.g. v5.7.2)'
+        description: '릴리즈할 태그 (e.g. v5.7.1)'
         required: true
         default: ''
 
 permissions:
-  contents: write
+  contents: write   # Release 생성·아카이브 업로드에 필요
 
 jobs:
   release:
@@ -29,28 +41,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ── 1. 체크아웃 ─────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # 태그·전체 히스토리 필요
 
+      # ── 2. 태그·버전 확인 ───────────────────────────────────
       - name: Resolve version
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAG="${{ github.event.inputs.tag }}"
+            # workflow_dispatch 시 태그가 없으면 현재 커밋에 생성
+            if ! git rev-parse "refs/tags/${TAG}" &>/dev/null; then
+              echo "::notice::태그 ${TAG} 없음 — 현재 커밋에 생성"
+              git config user.name  "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git tag "${TAG}"
+              git push origin "${TAG}"
+            fi
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
           VERSION="${TAG#v}"
           FILE_VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]')"
+
           echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
           if [[ "$VERSION" != "$FILE_VERSION" ]]; then
             echo "::warning::태그 ${TAG}와 VERSION 파일(${FILE_VERSION})이 다릅니다."
           fi
           echo "✅ Tag=${TAG}  Version=${VERSION}  FILE=${FILE_VERSION}"
 
+      # ── 3. Python 환경 ──────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -58,25 +83,35 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install pyserial numpy 2>/dev/null || true
+        run: |
+          python -m pip install --upgrade pip
+          # pyserial·numpy: 없어도 오프라인 검증은 통과 — 실패해도 계속
+          pip install pyserial numpy || echo "::warning::선택적 패키지 설치 실패 (무시)"
 
-      - name: Run validation
+      # ── 4. Protocol 검증 ────────────────────────────────────
+      - name: Run validation (Protocol 48/48 + Level 2 45/45)
         id: validation
         run: |
+          cd "$GITHUB_WORKSPACE"
           echo "── Protocol 검증 ──"
           RESULT=$(PYTHONPATH=host python3 examples/integrated_demo.py --validate 2>&1)
           echo "$RESULT"
+
           if echo "$RESULT" | grep -q "ALL CHECKS PASSED"; then
             SCORE=$(echo "$RESULT" | grep -oE '[0-9]+/[0-9]+ PASS' | tail -1)
             echo "proto_score=${SCORE}" >> "$GITHUB_OUTPUT"
+            echo "proto_ok=true"        >> "$GITHUB_OUTPUT"
             echo "✅ Protocol: ${SCORE}"
           else
+            echo "proto_ok=false" >> "$GITHUB_OUTPUT"
             echo "::error::Protocol 검증 실패"
             exit 1
           fi
+
           echo "── Level 2 검증 ──"
           L2_RESULT=$(PYTHONPATH=host python3 tests/level2/run_level2.py 2>&1)
           echo "$L2_RESULT"
+
           if echo "$L2_RESULT" | grep -q "ALL CHECKS PASSED"; then
             L2_SCORE=$(echo "$L2_RESULT" | grep -oE '[0-9]+/[0-9]+ PASS' | tail -1)
             echo "l2_score=${L2_SCORE}" >> "$GITHUB_OUTPUT"
@@ -85,6 +120,7 @@ jobs:
             echo "::warning::Level 2 검증 실패"
           fi
 
+      # ── 5. Release Notes 생성 ───────────────────────────────
       - name: Generate Release Notes
         id: notes
         run: |
@@ -92,30 +128,41 @@ jobs:
             --version "${{ steps.version.outputs.version }}" \
             --github-output \
             --out RELEASE_NOTES.md
-          echo "── Release Notes 미리보기 ──"
-          head -15 RELEASE_NOTES.md
 
+          echo "── Release Notes 미리보기 (앞 30줄) ──"
+          head -30 RELEASE_NOTES.md
+
+      # ── 6. 배포 아카이브 빌드 ───────────────────────────────
       - name: Build release archive
         id: archive
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCHIVE="ClaudeRTOS-Insight-v${VERSION}.tar.gz"
+
           tar -czf "${ARCHIVE}" \
-            --exclude='.git' --exclude='*.pyc' \
-            --exclude='__pycache__' --exclude='.github' \
-            --exclude='RELEASE_NOTES.md' .
+            --exclude='.git' \
+            --exclude='*.pyc' \
+            --exclude='__pycache__' \
+            --exclude='.github' \
+            --exclude='RELEASE_NOTES.md' \
+            .
+
           SIZE=$(du -sh "${ARCHIVE}" | cut -f1)
           SHA=$(sha256sum "${ARCHIVE}" | cut -d' ' -f1)
-          echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
-          echo "size=${SIZE}"       >> "$GITHUB_OUTPUT"
-          echo "sha256=${SHA}"      >> "$GITHUB_OUTPUT"
-          echo "✅ ${ARCHIVE} (${SIZE})"
 
+          echo "archive=${ARCHIVE}"  >> "$GITHUB_OUTPUT"
+          echo "size=${SIZE}"        >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}"       >> "$GITHUB_OUTPUT"
+          echo "✅ 아카이브: ${ARCHIVE} (${SIZE})  SHA256: ${SHA}"
+
+      # ── 7. SHA256 체크섬 파일 생성 ──────────────────────────
       - name: Create checksum file
         run: |
-          sha256sum "${{ steps.archive.outputs.archive }}" \
-            > "${{ steps.archive.outputs.archive }}.sha256"
+          ARCHIVE="${{ steps.archive.outputs.archive }}"
+          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "✅ SHA256: $(cat ${ARCHIVE}.sha256)"
 
+      # ── 8. GitHub Release 생성 + 업로드 ─────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -131,17 +178,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── 9. 완료 요약 ────────────────────────────────────────
       - name: Summary
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          ARCHIVE="${{ steps.archive.outputs.archive }}"
           REPO="${{ github.repository }}"
+
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## ✅ ClaudeRTOS-Insight v${VERSION} 릴리즈 완료
 
           | 항목 | 값 |
           |------|-----|
           | 버전 | \`v${VERSION}\` |
-          | 아카이브 | \`${{ steps.archive.outputs.archive }}\` (${{ steps.archive.outputs.size }}) |
+          | 아카이브 | \`${ARCHIVE}\` (${{ steps.archive.outputs.size }}) |
           | Protocol | ${{ steps.validation.outputs.proto_score }} |
           | Level 2  | ${{ steps.validation.outputs.l2_score }} |
           | SHA256 | \`${{ steps.archive.outputs.sha256 }}\` |
