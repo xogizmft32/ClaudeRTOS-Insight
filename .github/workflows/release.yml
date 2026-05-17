@@ -176,13 +176,19 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ARCHIVE="ClaudeRTOS-Insight-v${VERSION}.tar.gz"
 
-          tar -czf "${ARCHIVE}" \
+          # ARCHIVE를 현재 디렉터리 밖(runner temp)에 먼저 생성 후 이동
+          # → tar가 자기 자신을 포함하는 문제 방지
+          TMP_ARCHIVE="${RUNNER_TEMP}/${ARCHIVE}"
+
+          tar -czf "${TMP_ARCHIVE}" \
             --exclude='.git' \
             --exclude='*.pyc' \
             --exclude='__pycache__' \
             --exclude='.github' \
             --exclude='RELEASE_NOTES.md' \
             .
+
+          mv "${TMP_ARCHIVE}" "${ARCHIVE}"
 
           SIZE=$(du -sh "${ARCHIVE}" | cut -f1)
           SHA=$(sha256sum "${ARCHIVE}" | cut -d' ' -f1)
