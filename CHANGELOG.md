@@ -3152,3 +3152,46 @@ github.com/…/releases/tag/v5.7.2
 
 ---
 
+## [5.8.1] — 2026-05-19 (호스트 실시간 처리 개선 2차)
+
+### 신규 기능
+
+#### B-03: 패킷 재정렬 버퍼 (`parsers/binary_parser.py`)
+- `ReorderBuffer` 클래스 추가
+  - UART 재전송·DMA burst 환경의 out-of-order 패킷 처리
+  - window/2 이상 축적 또는 `max_wait_ms` timeout 시 자동 방출
+  - seq=3, 1, 2 입력 → 1, 2, 3 순서 방출
+  - `feed(pkt)` / `flush_all()` / `stats()` API
+  - 시퀀스 없는 패킷(ParsedFault 등) 즉시 통과
+
+#### B-04: 시간 동기화 드리프트 보정 (`parsers/time_sync.py`)
+- `TimeSyncManager` 전면 개선
+  - `_drift_ppm` 지수이동평균(α=0.3) 추정 — ±500ppm 이상치 필터링
+  - `correct_us()` 드리프트 선형 보정 포함
+  - `correct_snapshot()` `_drift_ppm` 필드 추가
+  - `info()` `drift_ppm`, `drift_ms_per_hour`, `sync_count` 필드 추가
+  - `resync_interval_s` 파라미터 — 주기적 재동기화 데몬 스레드
+  - `sync(transport, start_resync_thread=True)` 자동 재동기화 시작
+  - 드리프트 10ppm 기준 1시간 후 36ms 오차 자동 보정
+
+### 성능 개선
+
+#### C-03: SnapshotQueue 드롭 O(n) → O(log n) (`analysis/snapshot_queue.py`)
+- `_remove_at(idx)` 내부 메서드 추가
+  - `heap.pop(idx)` + `heapify` O(n) → heap swap + sift O(log n) 대체
+  - `heapq._siftup` / `_siftdown` CPython 내부 함수 활용
+  - Critical 이슈 폭발 시(큐 풀 상태) 드롭 연산 부하 대폭 감소
+  - 힙 불변식 유지 검증 완료
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Protocol 48/48 | ✅ ALL PASS (479ms) |
+| Level 2 45/45  | ✅ ALL PASS (150ms) |
+| ReorderBuffer 단위 테스트 | ✅ 4종 통과 |
+| TimeSyncManager 단위 테스트 | ✅ 4종 통과 |
+| SnapshotQueue 힙 불변식 | ✅ 검증 통과 |
+
+---
+

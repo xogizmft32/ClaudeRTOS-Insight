@@ -205,6 +205,27 @@ class SnapshotQueue:
 
     # ── 내부 드롭 로직 ───────────────────────────────────────────
 
+    def _remove_at(self, idx: int) -> None:
+        """
+        C-03: O(log n) heap 요소 제거 — heapify(O(n)) 대체.
+
+        heapq 표준 기법:
+          1. 제거 대상을 heap 끝 요소와 교환
+          2. heap 끝 요소 pop (O(1))
+          3. 교환된 위치에서 sift-up/down (O(log n))
+        """
+        heap = self._heap
+        last = len(heap) - 1
+        if idx != last:
+            heap[idx] = heap[last]
+            heap.pop()
+            if idx < len(heap):
+                # sift-down 후 필요하면 sift-up
+                heapq._siftup(heap, idx)    # type: ignore[attr-defined]
+                heapq._siftdown(heap, 0, idx)  # type: ignore[attr-defined]
+        else:
+            heap.pop()
+
     def _apply_drop_policy(self, new_snap: Dict,
                            new_issues: List[Dict]) -> bool:
         """
@@ -216,36 +237,29 @@ class SnapshotQueue:
         False = 새 항목 자체를 드롭해야 함
         """
         if self._drop_policy == 'oldest':
-            # 가장 오래된 = push_order 가장 작은 항목
+            # 가장 오래된 = push_order(index 1) 가장 작은 항목
             oldest_idx = min(range(len(self._heap)),
                              key=lambda i: self._heap[i][1])
-            self._heap.pop(oldest_idx)
-            heapq.heapify(self._heap)
+            self._remove_at(oldest_idx)          # C-03: O(log n)
             self._stats.drop('oldest')
             _log.debug("[SnapshotQueue] drop oldest — depth=%d", len(self._heap))
             return True
 
         elif self._drop_policy == 'lowest_severity':
-            # 새 항목의 심각도
             new_score = _severity_score(new_issues)
-            # 큐 안의 가장 낮은 심각도
             worst_idx = max(range(len(self._heap)),
                             key=lambda i: self._heap[i][0])
             worst_score = self._heap[worst_idx][0]
             if worst_score >= new_score:
-                # 기존 항목이 더 낮음 → 기존 드롭
-                self._heap.pop(worst_idx)
-                heapq.heapify(self._heap)
+                self._remove_at(worst_idx)       # C-03: O(log n)
                 self._stats.drop('lowest_severity_existing')
                 return True
             else:
-                # 새 항목이 더 낮음 → 새 항목 드롭
                 return False
 
-        else:  # duplicate — 여기 도달하면 중복 아닌 경우이므로 oldest 적용
+        else:  # duplicate fallback → oldest
             oldest_idx = min(range(len(self._heap)),
                              key=lambda i: self._heap[i][1])
-            self._heap.pop(oldest_idx)
-            heapq.heapify(self._heap)
+            self._remove_at(oldest_idx)          # C-03: O(log n)
             self._stats.drop('oldest_fallback')
             return True

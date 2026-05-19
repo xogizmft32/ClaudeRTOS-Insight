@@ -140,7 +140,112 @@ class SequenceTracker:
         return lost
 
 
-# ── B-02: 단조 타임스탬프 감시기 ────────────────────────────────
+
+# ── B-03: 패킷 재정렬 버퍼 ──────────────────────────────────────
+class ReorderBuffer:
+    """
+    Out-of-order 패킷 재정렬 버퍼.
+
+    UART 재전송·DMA burst 환경에서 seq=5, 3, 4 순으로 도착한 패킷을
+    3, 4, 5 순서로 방출해 SequenceTracker 오탐을 방지한다.
+
+    Parameters
+    ----------
+    window      : 재정렬 윈도우 크기 (기본 4 패킷)
+    max_wait_ms : 빈 슬롯 최대 대기 시간 ms (기본 100ms)
+
+    사용:
+        buf = ReorderBuffer(window=4)
+        for raw_pkt in collector.stream():
+            parsed = parser.parse_packet(raw_pkt)
+            if parsed:
+                for ordered in buf.feed(parsed):
+                    engine.analyze_snapshot(ordered.to_dict())
+    """
+
+    def __init__(self, window: int = 4, max_wait_ms: float = 100.0):
+        self._window     = max(2, window)
+        self._max_wait_s = max_wait_ms / 1000.0
+        self._buf: Dict[int, object] = {}
+        self._next_seq: Optional[int] = None
+        self._last_flush_t: float = 0.0
+        self._stats = {
+            "fed": 0, "emitted": 0, "reorders": 0,
+            "force_flushes": 0,
+        }
+
+    def feed(self, pkt) -> List:
+        """패킷 1개 입력, 정렬된 패킷 리스트 반환."""
+        import time as _time
+        self._stats["fed"] += 1
+        seq = getattr(pkt, "sequence", None)
+        if seq is None:
+            return [pkt]
+
+        if seq not in self._buf:
+            self._buf[seq] = pkt
+        self._stats["fed"]  # 이미 증가됨
+
+        now = _time.monotonic()
+
+        # _next_seq 초기화: window/2 이상 모이거나 timeout 시 최솟값으로 설정
+        if self._next_seq is None:
+            half = max(1, self._window // 2)
+            timeout_hit = (self._last_flush_t > 0 and
+                           now - self._last_flush_t > self._max_wait_s)
+            if len(self._buf) >= half or timeout_hit:
+                self._next_seq     = min(self._buf.keys())
+                self._last_flush_t = now
+            else:
+                if self._last_flush_t == 0.0:
+                    self._last_flush_t = now
+                return []  # 아직 대기 중
+
+        out = self._try_flush()
+        if (len(self._buf) >= self._window or
+                now - self._last_flush_t > self._max_wait_s):
+            out.extend(self._force_flush())
+        return out
+
+    def flush_all(self) -> List:
+        """세션 종료 시 잔여 패킷 전부 방출."""
+        return self._force_flush()
+
+    def stats(self) -> Dict:
+        return dict(self._stats)
+
+    def _try_flush(self) -> List:
+        import time as _time
+        out = []
+        while self._next_seq in self._buf:
+            out.append(self._buf.pop(self._next_seq))
+            self._stats["emitted"] += 1
+            self._next_seq = (self._next_seq + 1) & 0xFFFF
+        if out:
+            self._last_flush_t = _time.monotonic()
+        return out
+
+    def _force_flush(self) -> List:
+        import time as _time
+        if not self._buf:
+            return []
+        self._stats["force_flushes"] += 1
+        sorted_seqs = sorted(
+            self._buf.keys(),
+            key=lambda s: (s - (self._next_seq or 0)) & 0xFFFF,
+        )
+        out = []
+        for seq in sorted_seqs:
+            pkt = self._buf.pop(seq)
+            out.append(pkt)
+            self._stats["emitted"] += 1
+            if self._next_seq is not None and seq != self._next_seq:
+                self._stats["reorders"] += 1
+            self._next_seq = (seq + 1) & 0xFFFF
+        self._last_flush_t = _time.monotonic()
+        return out
+
+
 class MonotonicGuard:
     """
     timestamp_us 역전·점프 감지기.
