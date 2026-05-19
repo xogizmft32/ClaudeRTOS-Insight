@@ -469,7 +469,9 @@ class GlobalCausalGraph(CausalGraph):
         """
         # CAUSES 엣지 따라 BFS
         from collections import deque
-        queue: deque = deque()
+        # C-02: maxlen 설정 — 장기 세션에서 무제한 증가 방지
+        # 노드 수는 최대 수백 개 수준이므로 1024는 충분한 상한
+        queue: deque = deque(maxlen=1024)
         # in-degree=0 루트 노드부터 시작
         caused_ids = {e.to_id for e in self._edges if e.kind == EdgeKind.CAUSES}
         for nid, node in self._nodes.items():

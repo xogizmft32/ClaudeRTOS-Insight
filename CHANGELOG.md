@@ -3086,3 +3086,69 @@ github.com/…/releases/tag/v5.7.2
 
 ---
 
+## [5.8.0] — 2026-05-19 (호스트 실시간 처리 개선)
+
+### 버그 수정
+
+- **A-01** `collector.py` — 로그 메시지 f-string prefix 누락 11곳 수정
+  - `{self._device}` 등이 리터럴 문자열로 출력되던 버그 해소
+  - `%` lazy 포매팅으로 전환 (실시간 경로 CPU 낭비 감소)
+
+### 성능 개선
+
+- **A-02** `collector.py` — `struct.pack('<H', SYNC_MAGIC)` 핫패스 반복 제거
+  - `JLinkCollector._SYNC_BYTES`, `UARTCollector._SYNC_BYTES` 클래스 상수 추가
+  - 100패킷/초 기준 bytes 객체 200개/초 생성 제거
+- **A-03** `collector.py` — `bytearray` 슬라이스 재할당 → `del buf[:n]` in-place 삭제
+  - `JLinkCollector`, `UARTCollector`, `ITMPortAccumulator` 3곳 적용
+  - 버퍼 전체 재할당 제거 → GC 지터 감소
+
+### 신규 기능
+
+#### 수신 계층
+
+- **A-04** `collector.py` — `_LegacyCollectorWrapper` 종료 감지 강화
+  - `on_disconnect` 콜백 파라미터 추가
+  - `threading.Event` 기반 `stopped` 신호 + `wait_until_stopped()` API
+  - `is_running` 프로퍼티 추가
+  - `create_collector()` 시그니처 확장: `on_disconnect=None`
+
+#### 파싱 계층
+
+- **B-01** `parsers/binary_parser.py` — CRC 오류 패킷 명시적 차단 강화
+  - `_parse_header()` 반환값에 `'lost'` 필드 추가
+- **B-02** `parsers/binary_parser.py` — `MonotonicGuard` 신규 클래스
+  - STM32 재시작·timestamp 오버플로우 역전 감지
+  - 임계: 1초 이상 역행 시 리셋, 1시간 이상 급증 시 경고
+  - `BinaryParserV3(on_ts_reset=callback)` 파라미터 연동
+  - `_stats['ts_resets']` 통계 추가
+
+#### 분석 계층
+
+- **C-01** `analysis/alert_manager.py` — Alert Storm 방어
+  - `_TokenBucketRateLimiter` 클래스 추가 (rate=0.2/s, burst=3)
+  - 동일 이슈 `suppress_window_s` 내 중복 억제 (기본 60초)
+  - `_stats['suppressed']`, `_stats['rate_limited']` 통계 추가
+- **C-02** `analysis/causal_graph.py` — BFS deque `maxlen=1024` 설정
+- **C-04** `analysis/analyzer.py` — 공개 API 추가
+  - `notify_seq_gap(lost)` — 패킷 유실 통보 → ConsecutiveTracker 리셋
+  - `notify_ts_reset()` — 타임스탬프 역전 통보 → Trend+Consecutive 동시 리셋
+  - `import logging` + `logger` 추가
+
+#### 신규 모듈
+
+- **D-01** `host/utils/host_watchdog.py` — `HostWatchdog` 클래스
+  - 패킷 무수신 타임아웃 감지 + 자동 재연결
+  - 호스트 RSS 메모리 경고/위험 임계값 감시 (psutil 선택적)
+  - `on_timeout`, `on_mem_warn`, `on_mem_crit` 콜백
+  - `feed()` / `stop()` / `stats()` / `seconds_since_last_packet` API
+
+### 검증
+
+| 항목 | 결과 |
+|------|------|
+| Protocol 48/48 | ✅ ALL PASS (416ms) |
+| Level 2 45/45  | ✅ ALL PASS (149ms) |
+
+---
+

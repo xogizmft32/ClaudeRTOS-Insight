@@ -92,7 +92,8 @@ class JLinkCollector(BaseCollector):
     """
 
     # Binary Protocol V4 sync word
-    SYNC_MAGIC = 0xDEAD
+    SYNC_MAGIC  = 0xDEAD
+    _SYNC_BYTES = struct.pack('<H', SYNC_MAGIC)  # A-02: 클래스 정의 시 1회 생성
 
     def __init__(self,
                  cpu_hz:    int = 180_000_000,
@@ -133,8 +134,9 @@ class JLinkCollector(BaseCollector):
         # ITM 채널 0 활성화
         self._jlink.set_trace_source(pylink.enums.JLinkTraceSource.ETM)
         self._running = True
-        _log.info("[JLink] 연결됨: {self._device} @ {self._cpu_hz//1_000_000}MHz, "
-              f"SWO {self._swo_hz//1_000_000}MHz")
+        _log.info("[JLink] 연결됨: %s @ %dMHz, SWO %dMHz",
+                  self._device, self._cpu_hz // 1_000_000,
+                  self._swo_hz // 1_000_000)
 
     def close(self) -> None:
         self._running = False
@@ -171,7 +173,7 @@ class JLinkCollector(BaseCollector):
                     if len(self._buf) > self._BUF_MAX_BYTES:
                         drop = len(self._buf) // 2
                         self._buf = self._buf[drop:]
-                        _log.warning("[JLink] 버퍼 초과 → {drop}B 드롭")
+                        _log.warning("[JLink] 버퍼 초과 → %dB 드롭", drop)
 
                     for pkt in self._extract_packets():
                         self._packets_received += 1
@@ -186,10 +188,12 @@ class JLinkCollector(BaseCollector):
                     break
                 reconnect_count += 1
                 if reconnect_count > self._JLINK_RECONNECT_MAX:
-                    _log.error("[JLink] 재연결 {self._JLINK_RECONNECT_MAX}회 실패 — 수신 중단")
+                    _log.error("[JLink] 재연결 %d회 실패 — 수신 중단",
+                               self._JLINK_RECONNECT_MAX)
                     self._running = False
                     break
-                _log.warning("[JLink] 오류: {e} — 재연결 시도 {reconnect_count}/{self._JLINK_RECONNECT_MAX}")
+                _log.warning("[JLink] 오류: %s — 재연결 시도 %d/%d",
+                             e, reconnect_count, self._JLINK_RECONNECT_MAX)
                 time.sleep(1.0 * reconnect_count)  # 지수 백오프
                 try:
                     self._jlink.swo_flush()
@@ -205,27 +209,23 @@ class JLinkCollector(BaseCollector):
     def _extract_packets(self) -> Iterator[bytes]:
         """버퍼에서 완전한 패킷 추출."""
         while len(self._buf) >= 4:
-            # sync word 탐색
-            idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC))
+            # A-02: 상수 캐시 사용 (struct.pack 반복 호출 제거)
+            idx = self._buf.find(self._SYNC_BYTES)
             if idx < 0:
                 # sync word 없음 — 버퍼 최근 2바이트만 유지
-                self._buf = self._buf[-2:]
+                del self._buf[:-2]   # A-03: in-place 삭제
                 return
             if idx > 0:
-                self._buf = self._buf[idx:]   # sync 이전 버림
+                del self._buf[:idx]  # A-03: in-place 삭제
 
-            # 헤더 파싱 (최소 10바이트: magic(2)+ver(1)+type(1)+seq(2)+ts(4))
             if len(self._buf) < 10:
                 return
-            # 패킷 길이는 헤더 이후 데이터 크기 + CRC(4)
-            # 간단 휴리스틱: 다음 sync word까지를 패킷으로 처리
-            next_idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC), 2)
+            next_idx = self._buf.find(self._SYNC_BYTES, 2)
             if next_idx > 0:
                 pkt = bytes(self._buf[:next_idx])
-                self._buf = self._buf[next_idx:]
+                del self._buf[:next_idx]  # A-03: in-place 삭제
                 yield pkt
             else:
-                # 다음 sync 없음 — 버퍼 누적 대기
                 return
 
 
@@ -244,7 +244,8 @@ class UARTCollector(BaseCollector):
           parser.feed(pkt)
     """
 
-    SYNC_MAGIC = 0xDEAD
+    SYNC_MAGIC  = 0xDEAD
+    _SYNC_BYTES = struct.pack('<H', SYNC_MAGIC)  # A-02: 클래스 정의 시 1회 생성
 
     def __init__(self,
                  port:    str = '/dev/ttyUSB0',
@@ -275,7 +276,7 @@ class UARTCollector(BaseCollector):
             stopbits = serial.STOPBITS_ONE,
         )
         self._running = True
-        _log.info("[UART] 연결됨: {self._port} @ {self._baud} baud")
+        _log.info("[UART] 연결됨: %s @ %d baud", self._port, self._baud)
 
     def close(self) -> None:
         self._running = False
@@ -306,46 +307,47 @@ class UARTCollector(BaseCollector):
                     if len(self._buf) > self._BUF_MAX_BYTES:
                         drop = len(self._buf) // 2
                         self._buf = self._buf[drop:]
-                        _log.warning("[UART] 버퍼 초과 → {drop}B 드롭")
+                        _log.warning("[UART] 버퍼 초과 → %dB 드롭", drop)
 
                     for pkt in self._extract_packets():
                         self._packets_received += 1
                         yield pkt
 
             except serial.SerialException as e:
-                _log.error("[UART] 포트 오류: {e}")
+                _log.error("[UART] 포트 오류: %s", e)
                 _log.info("  힌트: sudo usermod -aG dialout $USER && newgrp dialout")
                 self._running = False
                 break
             except PermissionError as e:
-                _log.error("[UART] 권한 오류: {e}")
-                _log.info("  힌트: sudo chmod 666 {self._port}  또는  sudo usermod -aG dialout $USER")
+                _log.error("[UART] 권한 오류: %s", e)
+                _log.info("  힌트: sudo chmod 666 %s  또는  sudo usermod -aG dialout $USER",
+                          self._port)
                 self._running = False
                 break
             except OSError as e:
                 if self._running:
-                    _log.warning("[UART] OS 오류: {e} — 재시도 중...")
+                    _log.warning("[UART] OS 오류: %s — 재시도 중...", e)
                     time.sleep(0.5)
             except Exception as e:
                 if self._running:
-                    _log.error("[UART] 예기치 않은 오류: {e}")
+                    _log.error("[UART] 예기치 않은 오류: %s", e)
                     time.sleep(0.1)
 
     def _extract_packets(self) -> Iterator[bytes]:
         """버퍼에서 완전한 패킷 추출 (JLink와 동일 로직)."""
         while len(self._buf) >= 4:
-            idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC))
+            idx = self._buf.find(self._SYNC_BYTES)   # A-02
             if idx < 0:
-                self._buf = self._buf[-2:]
+                del self._buf[:-2]   # A-03
                 return
             if idx > 0:
-                self._buf = self._buf[idx:]
+                del self._buf[:idx]  # A-03
             if len(self._buf) < 10:
                 return
-            next_idx = self._buf.find(struct.pack('<H', self.SYNC_MAGIC), 2)
+            next_idx = self._buf.find(self._SYNC_BYTES, 2)  # A-02
             if next_idx > 0:
                 pkt = bytes(self._buf[:next_idx])
-                self._buf = self._buf[next_idx:]
+                del self._buf[:next_idx]  # A-03
                 yield pkt
             else:
                 return
@@ -367,7 +369,7 @@ class SimulateCollector(BaseCollector):
 
     def open(self) -> None:
         self._running = True
-        _log.debug("[Simulate] 시작 (시나리오: {self._scenario})")
+        _log.debug("[Simulate] 시작 (시나리오: %s)", self._scenario)
 
     def close(self) -> None:
         self._running = False
@@ -539,27 +541,26 @@ class ITMPortAccumulator:
         while len(self._buf) >= 4:
             idx = self._buf.find(SYNC)
             if idx < 0:
-                self._buf = self._buf[-1:]
+                del self._buf[:-1]   # A-03: in-place
                 return
             if idx > 0:
-                self._buf = self._buf[idx:]
+                del self._buf[:idx]  # A-03: in-place
             next_idx = self._buf.find(SYNC, 2)
             if next_idx < 0:
                 if force:
                     raw_pkt = bytes(self._buf)
-                    self._buf = bytearray()
+                    self._buf.clear()
                     if raw_pkt and len(raw_pkt) >= 10:
                         result = self._get_parser().parse_packet(raw_pkt)
                         if result is not None:
                             self._cb(result)
                 return
             raw_pkt = bytes(self._buf[:next_idx])
-            self._buf = self._buf[next_idx:]
-            if raw_pkt and len(raw_pkt) >= 10:  # 최소 헤더 크기 검증
+            del self._buf[:next_idx]  # A-03: in-place
+            if raw_pkt and len(raw_pkt) >= 10:
                 result = self._get_parser().parse_packet(raw_pkt)
                 if result is not None:
                     self._cb(result)
-                # parse 실패는 sync 충돌 또는 손상 패킷 → 조용히 버림
 
 
 def parse_itm_swo_frame(frame: bytes,
@@ -636,6 +637,7 @@ def parse_itm_swo_frame(frame: bytes,
 
 def create_collector(source: str,
                      on_packet: Callable[[bytes], None],
+                     on_disconnect: Optional[Callable] = None,
                      **kwargs):
     """
     레거시 팩토리 — integrated_demo.py 호환.
@@ -646,31 +648,40 @@ def create_collector(source: str,
       'simulate'         → SimulateCollector 래퍼
       'validate'         → DummyCollector (검증 전용)
 
-    반환: start() / stop() 메서드를 가진 객체
+    on_disconnect:
+      수신 스레드 종료 시 호출되는 콜백 (A-04).
+      None이면 무음 종료.
+
+    반환: start() / stop() / wait_until_stopped() / is_running 을 가진 객체
     """
-    return _LegacyCollectorWrapper(source, on_packet, **kwargs)
+    return _LegacyCollectorWrapper(source, on_packet,
+                                   on_disconnect=on_disconnect, **kwargs)
 
 
 class _LegacyCollectorWrapper:
     """create_collector() 반환 객체 — start/stop 인터페이스."""
 
-    def __init__(self, source: str, on_packet: Callable, **kwargs):
-        self._source    = source
-        self._cb        = on_packet
-        self._collector = None
-        self._thread    = None
-        self._kwargs    = kwargs
+    def __init__(self, source: str, on_packet: Callable,
+                 on_disconnect: Optional[Callable] = None, **kwargs):
+        self._source       = source
+        self._cb           = on_packet
+        self._on_disconnect = on_disconnect  # A-04: 종료 콜백
+        self._collector    = None
+        self._thread       = None
+        self._kwargs       = kwargs
+        self._stopped      = threading.Event()  # A-04: 외부 대기용
 
     def start(self) -> bool:
-        import threading
+        self._stopped.clear()
         try:
             self._collector = Collector(self._source, **self._kwargs)
             self._collector.open()
         except Exception as e:
-            print(f"[Collector] 시작 실패: {e}")
+            _log.error("[Collector] 시작 실패: %s", e)
+            self._stopped.set()
             return False
         self._thread = threading.Thread(
-            target=self._run, daemon=True)
+            target=self._run, daemon=True, name='claudertos-collector')
         self._thread.start()
         return True
 
@@ -678,11 +689,31 @@ class _LegacyCollectorWrapper:
         try:
             for raw in self._collector.stream():
                 self._cb(raw)
-        except (OSError, RuntimeError, StopIteration) as e:  # FIX-P02: PS-17
-            _log.debug("[BackgroundThread] stream ended: %s", e)
+        except (OSError, RuntimeError) as e:
+            # 정상 종료가 아닌 오류 → error 레벨 기록
+            _log.error("[BackgroundThread] 수신 오류로 종료: %s", e)
+        except StopIteration:
+            _log.debug("[BackgroundThread] 스트림 정상 종료")
+        finally:
+            # A-04: 종료 항상 알림 (오류·정상 모두)
+            self._stopped.set()
+            if self._on_disconnect:
+                try:
+                    self._on_disconnect()
+                except Exception as e:
+                    _log.debug("[BackgroundThread] on_disconnect 오류: %s", e)
+
+    def wait_until_stopped(self, timeout: Optional[float] = None) -> bool:
+        """스레드 종료까지 대기. timeout=None이면 무기한."""
+        return self._stopped.wait(timeout=timeout)
+
+    @property
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
 
     def stop(self):
         if self._collector:
             self._collector.close()
         if self._thread:
             self._thread.join(timeout=2)
+        self._stopped.set()

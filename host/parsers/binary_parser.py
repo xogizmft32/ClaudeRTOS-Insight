@@ -140,16 +140,75 @@ class SequenceTracker:
         return lost
 
 
+# ── B-02: 단조 타임스탬프 감시기 ────────────────────────────────
+class MonotonicGuard:
+    """
+    timestamp_us 역전·점프 감지기.
+
+    STM32 재시작이나 HAL_GetTick 오버플로우(49.7일) 발생 시
+    타임스탬프가 갑자기 0으로 초기화된다. 이를 감지해
+    TrendAnalyzer 오염을 방지한다.
+
+    동작:
+      check() → False: 정상 (단조 증가 또는 미미한 변화)
+      check() → True : 역전 감지 → AnalysisEngine.notify_seq_gap() 권장
+
+    임계값:
+      _BACKWARD_US = 1초 이상 역행하면 리셋으로 판단
+      _JUMP_US     = 1시간 이상 급증하면 시간축 점프로 경고
+    """
+    _BACKWARD_US: int = 1_000_000      # 1초
+    _JUMP_US:     int = 3_600_000_000  # 1시간
+
+    def __init__(self) -> None:
+        self._last:   int = 0
+        self.resets:  int = 0
+        self.jumps:   int = 0
+
+    def check(self, ts: int) -> bool:
+        """
+        Returns
+        -------
+        True  = 타임스탬프 역전 감지 (분석 엔진에 리셋 권장)
+        False = 정상
+        """
+        delta = ts - self._last
+        if self._last > 0 and delta < -self._BACKWARD_US:
+            self.resets += 1
+            logger.warning(
+                "MonotonicGuard: timestamp jump backward %d→%d (δ=%d µs) — "
+                "STM32 재시작 또는 오버플로우 추정", self._last, ts, delta)
+            self._last = ts
+            return True
+        if self._last > 0 and delta > self._JUMP_US:
+            self.jumps += 1
+            logger.warning(
+                "MonotonicGuard: timestamp jump forward %d→%d (δ=%d µs) — "
+                "시간축 불연속", self._last, ts, delta)
+        self._last = ts
+        return False
+
+
 # ── Parser ───────────────────────────────────────────────────────
 class BinaryParserV3:
 
-    def __init__(self):
-        self.seq_tracker = SequenceTracker()
+    def __init__(self, on_ts_reset: Optional[callable] = None):
+        """
+        Parameters
+        ----------
+        on_ts_reset : B-02 타임스탬프 역전 감지 시 호출되는 콜백.
+                      AnalysisEngine.notify_seq_gap() 등을 연결한다.
+                      None이면 경고 로그만 출력.
+        """
+        self.seq_tracker  = SequenceTracker()
+        self._mono_guard  = MonotonicGuard()      # B-02
+        self._on_ts_reset = on_ts_reset           # B-02
         self._stats = {
             'parsed_os':    0, 'parsed_fault': 0,
             'crc_errors':   0, 'format_errors': 0,
             'sequence_gaps':0, 'packets_lost':  0,
             'v3_packets':   0, 'v4_packets':    0,
+            'ts_resets':    0,                    # B-02
         }
         self._detected_major = 3   # 수신된 패킷 major 버전
 
@@ -172,12 +231,25 @@ class BinaryParserV3:
         if m1 != MAGIC1 or m2 != MAGIC2 or not (PROTOCOL_VERSION_MIN <= ver <= PROTOCOL_VERSION):
             self._stats['format_errors'] += 1
             return None
+
+        # B-02: 타임스탬프 단조성 검증
+        if self._mono_guard.check(ts):
+            self._stats['ts_resets'] += 1
+            if self._on_ts_reset:
+                try:
+                    self._on_ts_reset()
+                except Exception:
+                    pass
+
+        # 시퀀스 갭 감지
         lost = self.seq_tracker.update(seq)
         if lost is not None:
             self._stats['sequence_gaps'] += 1
             self._stats['packets_lost']  += lost
+
         return {'port': port, 'timestamp_us': ts,
-                'sequence': seq, 'packet_type': ptype, 'flags': flags}
+                'sequence': seq, 'packet_type': ptype, 'flags': flags,
+                'lost': lost}
 
     def parse_os_snapshot(self, data: bytes) -> Optional[ParsedSnapshot]:
         if not self._verify_crc(data):

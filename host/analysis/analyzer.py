@@ -16,11 +16,14 @@ AI 모드 추가:
   - Rule-based 탐지(< 1ms)와 AI 호출(~1-3s)은 항상 분리
 """
 
+import logging
 import time
 from typing import List, Dict, Optional, Literal
 from dataclasses import dataclass, field
 from collections import deque
 import statistics
+
+logger = logging.getLogger(__name__)
 
 # AI 모드 타입
 AiMode = Literal['offline', 'postmortem', 'realtime']
@@ -396,6 +399,35 @@ class AnalysisEngine:
     def get_ai_ready_issues(self) -> List[Issue]:
         """postmortem 세션 종료 후 일괄 AI 분석용."""
         return [i for i in self._issues if i.ai_ready]
+
+    def notify_seq_gap(self, lost: int = 1) -> None:
+        """
+        C-04: 외부 파서에서 패킷 유실 통보.
+
+        BinaryParserV3의 on_ts_reset 또는 SequenceTracker 갭 감지 시
+        이 메서드를 호출하면 ConsecutiveTracker를 즉시 리셋해
+        패킷 유실 기간 동안의 이슈 감지 노이즈를 차단한다.
+
+        Parameters
+        ----------
+        lost : 유실된 패킷 수 (0 이상)
+        """
+        if lost > 0:
+            self._consecutive.reset()
+            logger.debug("AnalysisEngine: ConsecutiveTracker reset (%d packets lost)", lost)
+
+    def notify_ts_reset(self) -> None:
+        """
+        C-04 / B-02: 타임스탬프 역전(STM32 재시작) 통보.
+
+        MonotonicGuard가 역전을 감지하면 호출한다.
+        TrendTracker와 ConsecutiveTracker를 동시에 리셋한다.
+        """
+        self._consecutive.reset()
+        self._heap_trend = TrendTracker(15, min_samples=7, warm_up=3)
+        self._cpu_trend  = TrendTracker(15, min_samples=7, warm_up=3)
+        self._last_seq   = -1
+        logger.warning("AnalysisEngine: 타임스탬프 역전 → Trend/Consecutive 리셋")
 
     def lru_stats(self) -> Dict:
         """LRU 캐시 적중/미스 통계."""

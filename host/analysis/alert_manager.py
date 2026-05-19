@@ -39,6 +39,41 @@ from typing import Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+# ── C-01: 토큰 버킷 Rate Limiter ─────────────────────────────────
+class _TokenBucketRateLimiter:
+    """
+    Alert storm 방어용 토큰 버킷.
+
+    웹훅 rate limit (Slack: 1req/s, Teams: ~4req/s) 초과를 방지한다.
+
+    Parameters
+    ----------
+    rate  : 초당 토큰 보충 속도 (기본 0.2 → 5초에 1개)
+    burst : 최대 버스트 크기 (기본 3)
+    """
+    def __init__(self, rate: float = 0.2, burst: int = 3):
+        self._rate   = rate
+        self._burst  = float(burst)
+        self._tokens = float(burst)
+        self._last   = time.monotonic()
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        self._tokens = min(
+            self._burst,
+            self._tokens + (now - self._last) * self._rate
+        )
+        self._last = now
+        if self._tokens >= 1.0:
+            self._tokens -= 1.0
+            return True
+        return False
+
+    def drain_ratio(self) -> float:
+        """현재 토큰 소진 비율 (0=여유, 1=고갈)."""
+        return 1.0 - (self._tokens / self._burst)
+
+
 @dataclass
 class AlertRecord:
     """단일 알림 기록."""
@@ -66,21 +101,33 @@ class AlertManager:
                  log_file:      Optional[str]  = None,
                  min_severity:  str            = 'Critical',
                  webhook_timeout_s: float      = 2.0,
-                 custom_handler: Optional[Callable] = None):
+                 custom_handler: Optional[Callable] = None,
+                 rate_limit_rate:  float = 0.2,
+                 rate_limit_burst: int   = 3,
+                 suppress_window_s: float = 60.0):
         """
         Parameters
         ----------
-        webhook_url     : Slack/Teams/사용자 정의 웹훅 URL
-        log_file        : 알림 파일 경로 (None이면 파일 기록 안 함)
-        min_severity    : 이 심각도 이상만 알림 (Critical / High)
-        webhook_timeout_s: 웹훅 전송 최대 대기 시간 (초)
-        custom_handler  : 사용자 정의 핸들러 (이벤트 리스트 → None)
+        webhook_url        : Slack/Teams/사용자 정의 웹훅 URL
+        log_file           : 알림 파일 경로
+        min_severity       : 이 심각도 이상만 알림
+        webhook_timeout_s  : 웹훅 전송 최대 대기 시간 (초)
+        custom_handler     : 사용자 정의 핸들러
+        rate_limit_rate    : C-01 토큰 보충 속도 (req/s, 기본 0.2 = 5초당 1회)
+        rate_limit_burst   : C-01 버스트 허용 크기 (기본 3)
+        suppress_window_s  : C-01 동일 이슈 억제 윈도우 (초, 기본 60)
         """
         self._webhook_url    = webhook_url
         self._webhook_timeout = webhook_timeout_s
         self._custom_handler = custom_handler
         self._min_severity   = min_severity
         self._history:       List[AlertRecord] = []
+
+        # C-01: rate limiter + suppression
+        self._limiter        = _TokenBucketRateLimiter(rate_limit_rate, rate_limit_burst)
+        self._suppress_window = suppress_window_s
+        self._last_sent:     Dict[str, float] = {}   # issue_type → last send time
+        self._suppressed:    Dict[str, int]   = {}   # issue_type → suppressed count
 
         # 파일 로거 설정
         self._file_logger: Optional[logging.Logger] = None
@@ -94,7 +141,8 @@ class AlertManager:
             self._file_logger = fl
 
         self._stats = {'total': 0, 'console': 0, 'file': 0,
-                       'webhook': 0, 'webhook_fail': 0}
+                       'webhook': 0, 'webhook_fail': 0,
+                       'suppressed': 0, 'rate_limited': 0}  # C-01 통계
 
     # ── 메인 콜백 ─────────────────────────────────────────────
     def on_critical(self, events: List[Dict]) -> None:
@@ -106,6 +154,29 @@ class AlertManager:
             sev = ev.get('severity', 'Critical')
             if not self._should_alert(sev):
                 continue
+
+            itype = ev.get('type', ev.get('issue_type', 'unknown'))
+            now   = time.monotonic()
+
+            # C-01: 동일 이슈 억제 (suppress_window 내 중복 방지)
+            last = self._last_sent.get(itype, 0.0)
+            if now - last < self._suppress_window:
+                self._suppressed[itype] = self._suppressed.get(itype, 0) + 1
+                self._stats['suppressed'] += 1
+                logger.debug("Alert 억제: %s (window=%.0fs, count=%d)",
+                             itype, self._suppress_window,
+                             self._suppressed[itype])
+                continue
+
+            # C-01: 토큰 버킷 rate limit
+            if not self._limiter.allow():
+                self._stats['rate_limited'] += 1
+                logger.warning("Alert rate limit 초과 (drain=%.0f%%) — %s 전송 생략",
+                               self._limiter.drain_ratio() * 100, itype)
+                continue
+
+            self._last_sent[itype] = now
+            self._suppressed.pop(itype, None)
             self._dispatch(ev)
             self._stats['total'] += 1
 
